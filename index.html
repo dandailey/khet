@@ -12,6 +12,35 @@
         <h1>Khet - Laser Chess</h1>
       </header>
       
+      <!-- Mode Selection Overlay -->
+      <div id="mode-selection-overlay" class="mode-selection-overlay">
+        <div class="mode-selection-content">
+          <h2>Choose Game Mode</h2>
+          <div class="mode-buttons">
+            <button id="pvp-btn" class="mode-btn mode-btn-pvp">
+              <span class="mode-icon">👥</span>
+              <span class="mode-title">Player vs Player</span>
+              <span class="mode-desc">Two human players</span>
+            </button>
+            <button id="pvc-easy-btn" class="mode-btn mode-btn-pvc disabled">
+              <span class="mode-icon">🤖</span>
+              <span class="mode-title">vs Computer - Easy</span>
+              <span class="mode-desc">Coming soon</span>
+            </button>
+            <button id="pvc-medium-btn" class="mode-btn mode-btn-pvc disabled">
+              <span class="mode-icon">🧠</span>
+              <span class="mode-title">vs Computer - Medium</span>
+              <span class="mode-desc">Coming soon</span>
+            </button>
+            <button id="pvc-hard-btn" class="mode-btn mode-btn-pvc disabled">
+              <span class="mode-icon">🔥</span>
+              <span class="mode-title">vs Computer - Hard</span>
+              <span class="mode-desc">Coming soon</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      
       <main>
         <div id="game-board" class="board"></div>
         

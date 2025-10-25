@@ -99,7 +99,8 @@ let gameState = {
   board: [],
   gameOver: false,
   winner: null,
-  actionTaken: false // Track if player has taken an action this turn
+  actionTaken: false, // Track if player has taken an action this turn
+  gameMode: 'pvp' // Default to player vs player
 }
 
 let laserLayerElement = null
@@ -1304,6 +1305,28 @@ function hideGameOverOverlay() {
 // Handle play again button
 function handlePlayAgain() {
   hideGameOverOverlay()
+  showModeSelection()
+}
+
+// Show mode selection overlay
+function showModeSelection() {
+  const overlay = document.getElementById('mode-selection-overlay')
+  if (overlay) {
+    overlay.classList.remove('hidden')
+  }
+}
+
+// Hide mode selection overlay
+function hideModeSelection() {
+  const overlay = document.getElementById('mode-selection-overlay')
+  if (overlay) {
+    overlay.classList.add('hidden')
+  }
+}
+
+// Handle mode selection
+function handleModeSelection(mode) {
+  hideModeSelection()
   
   // Reset game state
   gameState.currentPlayer = SILVER  // Silver always goes first
@@ -1312,6 +1335,7 @@ function handlePlayAgain() {
   gameState.gameOver = false
   gameState.winner = null
   gameState.actionTaken = false
+  gameState.gameMode = mode  // Store the selected mode
   
   clearLaserLayer()
   laserActive = false
@@ -1325,4 +1349,36 @@ function handlePlayAgain() {
 }
 
 // Start the game when DOM is loaded
-document.addEventListener('DOMContentLoaded', initGame)
+document.addEventListener('DOMContentLoaded', () => {
+  // Set up mode selection event listeners
+  const pvpBtn = document.getElementById('pvp-btn')
+  const pvcEasyBtn = document.getElementById('pvc-easy-btn')
+  const pvcMediumBtn = document.getElementById('pvc-medium-btn')
+  const pvcHardBtn = document.getElementById('pvc-hard-btn')
+  
+  if (pvpBtn) {
+    pvpBtn.addEventListener('click', () => handleModeSelection('pvp'))
+  }
+  
+  // PvC buttons are disabled for now
+  if (pvcEasyBtn) {
+    pvcEasyBtn.addEventListener('click', () => {
+      // Will be enabled later
+    })
+  }
+  
+  if (pvcMediumBtn) {
+    pvcMediumBtn.addEventListener('click', () => {
+      // Will be enabled later
+    })
+  }
+  
+  if (pvcHardBtn) {
+    pvcHardBtn.addEventListener('click', () => {
+      // Will be enabled later
+    })
+  }
+  
+  // Show mode selection on first load
+  showModeSelection()
+})
