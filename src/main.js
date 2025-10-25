@@ -1083,6 +1083,8 @@ function handleLaserHit(endpoint) {
 
   // Only remove the piece if it was destroyed, not absorbed by Anubis shield
   if (!absorbed) {
+    // Add destruction animation before removing the piece
+    addDestructionAnimation(hitRow, hitCol)
     gameState.board[hitRow][hitCol] = null
   }
 
@@ -1093,6 +1095,68 @@ function handleLaserHit(endpoint) {
     // Overlay will be shown after the laser animation in handleFireLaser
     persistLaserPath()
   }
+}
+
+// Add destruction animation for destroyed pieces
+function addDestructionAnimation(row, col) {
+  const boardElement = document.getElementById('game-board')
+  if (!boardElement) return
+  
+  const boardRect = boardElement.getBoundingClientRect()
+  const squareWidth = boardRect.width / BOARD_COLS
+  const squareHeight = boardRect.height / BOARD_ROWS
+  
+  // Get the center of the square where the piece was destroyed
+  const squareCenter = getSquareCenter(row, col, boardRect)
+  if (!squareCenter) return
+  
+  // Create the pink glow effect
+  const glowElement = document.createElement('div')
+  glowElement.className = 'destruction-glow'
+  glowElement.style.left = `${squareCenter.x - 35}px` // Center the 70px glow
+  glowElement.style.top = `${squareCenter.y - 35}px`
+  
+  // Create particle container
+  const particleContainer = document.createElement('div')
+  particleContainer.className = 'particle-container'
+  particleContainer.style.left = `${squareCenter.x}px`
+  particleContainer.style.top = `${squareCenter.y}px`
+  
+  // Create multiple particles flying in random directions
+  const particleCount = 12
+  for (let i = 0; i < particleCount; i++) {
+    const particle = document.createElement('div')
+    particle.className = 'destruction-particle'
+    
+    // Random direction and distance
+    const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5
+    const distance = 25 + Math.random() * 15 // 25-40px distance
+    const duration = 800 + Math.random() * 400 // 800-1200ms duration
+    
+    const endX = Math.cos(angle) * distance
+    const endY = Math.sin(angle) * distance
+    
+    particle.style.setProperty('--end-x', `${endX}px`)
+    particle.style.setProperty('--end-y', `${endY}px`)
+    particle.style.setProperty('--duration', `${duration}ms`)
+    
+    particleContainer.appendChild(particle)
+  }
+  
+  // Add to laser layer so they appear above pieces
+  ensureLaserLayer()
+  laserLayerElement.appendChild(glowElement)
+  laserLayerElement.appendChild(particleContainer)
+  
+  // Remove the animation elements after they finish
+  setTimeout(() => {
+    if (glowElement.parentNode) {
+      glowElement.remove()
+    }
+    if (particleContainer.parentNode) {
+      particleContainer.remove()
+    }
+  }, 1500) // Remove after 1.5 seconds
 }
 
 function ensureLaserLayer() {
