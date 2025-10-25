@@ -14,6 +14,54 @@ const DIRECTIONS = {
   NW: 315
 }
 
+const CARDINAL_VECTORS = {
+  N: { row: -1, col: 0 },
+  E: { row: 0, col: 1 },
+  S: { row: 1, col: 0 },
+  W: { row: 0, col: -1 }
+}
+
+const OPPOSITE_DIRECTIONS = {
+  N: "S",
+  E: "W",
+  S: "N",
+  W: "E"
+}
+
+const SCARAB_SLASH_FACINGS = new Set(["NE", "SE"])
+const SCARAB_BACKSLASH_FACINGS = new Set(["NW", "SW"])
+
+const SLASH_REFLECTION_MAPPING = {
+  N: "E",
+  E: "N",
+  S: "W",
+  W: "S"
+}
+
+const BACKSLASH_REFLECTION_MAPPING = {
+  N: "W",
+  W: "N",
+  S: "E",
+  E: "S"
+}
+
+// Pyramids: facing direction shows where mirrors point (the arrow direction)
+// SW (↙) = mirrors on S and W sides → reflects from S/W, vulnerable from N/E
+// NE (↗) = mirrors on N and E sides → reflects from N/E, vulnerable from S/W
+const PYRAMID_MIRROR_ENTRIES = {
+  NE: new Set(["N", "E"]),  // Reflects from N/E (mirrored), vulnerable from S/W
+  SW: new Set(["S", "W"]),  // Reflects from S/W (mirrored), vulnerable from N/E
+  NW: new Set(["N", "W"]),  // Reflects from N/W (mirrored), vulnerable from S/E
+  SE: new Set(["S", "E"])   // Reflects from S/E (mirrored), vulnerable from N/W
+}
+
+const MAX_LASER_STEPS = 100
+const LASER_THICKNESS = 6
+const LASER_DURATION = 1500
+const BOARD_ROWS = 8
+const BOARD_COLS = 10
+const SQUARE_SIZE = 70
+
 const RED = 1
 const SILVER = 2
 
@@ -45,7 +93,7 @@ const RESERVED_SILVER = new Set([
 
 // Game state
 let gameState = {
-  currentPlayer: RED,
+  currentPlayer: SILVER,  // Silver (blue) goes first
   selectedPiece: null,
   selectedSquare: null,
   board: [],
@@ -53,6 +101,11 @@ let gameState = {
   winner: null,
   actionTaken: false // Track if player has taken an action this turn
 }
+
+let laserLayerElement = null
+let activeLaserTimeout = null
+let listenersAttached = false
+let laserActive = false
 
 // Initialize the game
 function initGame() {
@@ -66,6 +119,9 @@ function initGame() {
   // Set up initial piece positions (Classic setup)
   setupClassicLayout()
   
+  ensureLaserLayer()
+  clearLaserLayer()
+
   // Render the board
   renderBoard()
   
@@ -132,6 +188,8 @@ function setupClassicLayout() {
 function renderBoard() {
   const boardElement = document.getElementById('game-board')
   boardElement.innerHTML = ''
+  ensureLaserLayer()
+  clearLaserLayer()
   
   for (let row = 0; row < 8; row += 1) {
     for (let col = 0; col < 10; col += 1) {
@@ -410,12 +468,13 @@ function createScarabSVG(size, center, facing, player) {
 // Set up event listeners
 function setupEventListeners() {
   const boardElement = document.getElementById('game-board')
-  const fireLaserBtn = document.getElementById('fire-laser')
   const resetGameBtn = document.getElementById('reset-game')
   
-  boardElement.addEventListener('click', handleSquareClick)
-  fireLaserBtn.addEventListener('click', handleFireLaser)
-  resetGameBtn.addEventListener('click', handleResetGame)
+  if (!listenersAttached) {
+    boardElement.addEventListener('click', handleSquareClick)
+    resetGameBtn.addEventListener('click', handleResetGame)
+    listenersAttached = true
+  }
 }
 
 // Update player display
@@ -621,9 +680,14 @@ function movePiece(fromRow, fromCol, toRow, toCol) {
     gameState.board[fromRow][fromCol] = null
   }
   
-  // Clear selection and end turn
+  // Clear selection, render the board to show the move, then fire laser
   clearSelection()
-  endTurn()
+  renderBoard()
+  
+  // Use setTimeout to ensure the DOM updates before firing laser
+  setTimeout(() => {
+    handleFireLaser()
+  }, 50)
 }
 
 // Rotate a piece
@@ -681,9 +745,14 @@ function rotatePiece(row, col, direction) {
   
   piece.facing = newFacing
   
-  // Clear selection and end turn
+  // Clear selection, render the board to show the rotation, then fire laser
   clearSelection()
-  endTurn()
+  renderBoard()
+  
+  // Use setTimeout to ensure the DOM updates before firing laser
+  setTimeout(() => {
+    handleFireLaser()
+  }, 50)
 }
 
 // End current player's turn
@@ -697,10 +766,274 @@ function endTurn() {
 // Handle laser firing
 function handleFireLaser() {
   if (gameState.gameOver) return
+  if (laserActive) return
   
-  console.log(`Player ${gameState.currentPlayer} fires laser!`)
-  
-  // TODO: Implement laser mechanics
+  const path = computeLaserPath()
+  if (!path || path.length === 0) return
+
+  laserActive = true
+  clearLaserLayer()
+  renderLaserPath(path)
+
+  const endpoint = path[path.length - 1]
+  if (endpoint.hit && endpoint.hitPiece) {
+    handleLaserHit(endpoint)
+  }
+
+  if (activeLaserTimeout) {
+    clearTimeout(activeLaserTimeout)
+  }
+
+  activeLaserTimeout = setTimeout(() => {
+    clearLaserLayer()
+    laserActive = false
+    if (gameState.gameOver) {
+      renderBoard()
+    } else {
+      endTurn()
+    }
+  }, LASER_DURATION)
+}
+
+function computeLaserPath() {
+  const sphinxInfo = findCurrentPlayerSphinx()
+  if (!sphinxInfo) return []
+
+  let { row: currentRow, col: currentCol, facing } = sphinxInfo
+  let direction = facing
+  if (!CARDINAL_VECTORS[direction]) return []
+
+  const path = []
+  const visited = new Set()
+
+  for (let step = 0; step < MAX_LASER_STEPS; step += 1) {
+    const stateKey = `${currentRow}-${currentCol}-${direction}`
+    if (visited.has(stateKey)) break
+    visited.add(stateKey)
+
+    const vector = CARDINAL_VECTORS[direction]
+    if (!vector) break
+
+    const nextRow = currentRow + vector.row
+    const nextCol = currentCol + vector.col
+
+    const segment = {
+      startRow: currentRow,
+      startCol: currentCol,
+      endRow: nextRow,
+      endCol: nextCol,
+      direction
+    }
+
+    if (nextRow < 0 || nextRow >= BOARD_ROWS || nextCol < 0 || nextCol >= BOARD_COLS) {
+      segment.outOfBounds = true
+      path.push(segment)
+      break
+    }
+
+    const targetPiece = gameState.board[nextRow][nextCol]
+    segment.targetPiece = targetPiece
+    path.push(segment)
+
+    if (!targetPiece) {
+      currentRow = nextRow
+      currentCol = nextCol
+      continue
+    }
+
+    // Pass the direction the laser is coming FROM (opposite of travel direction)
+    const entryDirection = OPPOSITE_DIRECTIONS[direction]
+    const interaction = resolveLaserInteraction(targetPiece, entryDirection)
+
+    if (interaction.type === 'reflect') {
+      direction = interaction.newDirection
+      currentRow = nextRow
+      currentCol = nextCol
+      segment.reflected = true
+      continue
+    }
+
+    if (interaction.type === 'absorb') {
+      segment.absorbed = true
+      segment.hitPiece = targetPiece
+      segment.hitRow = nextRow
+      segment.hitCol = nextCol
+      break
+    }
+
+    if (interaction.type === 'destroy') {
+      segment.hit = true
+      segment.hitPiece = targetPiece
+      segment.hitRow = nextRow
+      segment.hitCol = nextCol
+      segment.destroyed = true
+      break
+    }
+  }
+
+  return path
+}
+
+function resolveLaserInteraction(piece, direction) {
+  if (piece.type === 'scarab') {
+    const isSlash = SCARAB_SLASH_FACINGS.has(piece.facing)
+    const mapping = isSlash ? SLASH_REFLECTION_MAPPING : BACKSLASH_REFLECTION_MAPPING
+    const newDirection = mapping[direction]
+    if (!newDirection) return { type: 'absorb' }
+    return { type: 'reflect', newDirection }
+  }
+
+  if (piece.type === 'pyramid') {
+    const entries = PYRAMID_MIRROR_ENTRIES[piece.facing]
+    const usesSlash = piece.facing === 'NE' || piece.facing === 'SW'
+    const mapping = usesSlash ? SLASH_REFLECTION_MAPPING : BACKSLASH_REFLECTION_MAPPING
+    
+    if (entries && entries.has(direction)) {
+      const newDirection = mapping[direction]
+      if (!newDirection) return { type: 'absorb' }
+      return { type: 'reflect', newDirection }
+    }
+
+    return { type: 'destroy' }
+  }
+
+  if (piece.type === 'anubis') {
+    const frontDirection = OPPOSITE_DIRECTIONS[piece.facing]
+    if (direction === frontDirection) {
+      return { type: 'absorb' }
+    }
+
+    return { type: 'destroy' }
+  }
+
+  if (piece.type === 'sphinx') {
+    return { type: 'absorb' }
+  }
+
+  // Pharaohs and any other pieces are destroyed when hit
+  return { type: 'destroy' }
+}
+
+function renderLaserPath(path) {
+  if (!path || path.length === 0) return
+  ensureLaserLayer()
+  clearLaserLayer()
+
+  if (!laserLayerElement) return
+
+  const boardElement = document.getElementById('game-board')
+  if (!boardElement) return
+
+  const boardRect = boardElement.getBoundingClientRect()
+  const squareWidth = boardRect.width / BOARD_COLS
+  const squareHeight = boardRect.height / BOARD_ROWS
+
+  path.forEach(segment => {
+    const startCenter = getSquareCenter(segment.startRow, segment.startCol, boardRect)
+    if (!startCenter) return
+
+    let endCenter = null
+    if (segment.outOfBounds) {
+      endCenter = {
+        x: startCenter.x + CARDINAL_VECTORS[segment.direction].col * (squareWidth / 2),
+        y: startCenter.y + CARDINAL_VECTORS[segment.direction].row * (squareHeight / 2)
+      }
+    } else {
+      endCenter = getSquareCenter(segment.endRow, segment.endCol, boardRect)
+    }
+
+    if (!endCenter) return
+
+    const laserSegment = document.createElement('div')
+    laserSegment.className = 'laser-path'
+
+    const deltaX = endCenter.x - startCenter.x
+    const deltaY = endCenter.y - startCenter.y
+
+    if (Math.abs(deltaX) >= Math.abs(deltaY)) {
+      const length = Math.abs(deltaX)
+      laserSegment.style.width = `${length}px`
+      laserSegment.style.height = `${LASER_THICKNESS}px`
+      laserSegment.style.left = `${Math.min(startCenter.x, endCenter.x)}px`
+      laserSegment.style.top = `${startCenter.y - LASER_THICKNESS / 2}px`
+    } else {
+      const length = Math.abs(deltaY)
+      laserSegment.style.width = `${LASER_THICKNESS}px`
+      laserSegment.style.height = `${length}px`
+      laserSegment.style.left = `${startCenter.x - LASER_THICKNESS / 2}px`
+      laserSegment.style.top = `${Math.min(startCenter.y, endCenter.y)}px`
+    }
+
+    laserLayerElement.appendChild(laserSegment)
+    
+    // Add impact indicator if this segment hits something
+    if (segment.hit || segment.absorbed) {
+      const hitIndicator = document.createElement('div')
+      hitIndicator.className = 'laser-impact'
+      hitIndicator.style.left = `${endCenter.x - LASER_THICKNESS * 1.5}px`
+      hitIndicator.style.top = `${endCenter.y - LASER_THICKNESS * 1.5}px`
+      laserLayerElement.appendChild(hitIndicator)
+    }
+  })
+}
+
+function handleLaserHit(endpoint) {
+  const { hitPiece, hitRow, hitCol } = endpoint
+  if (!hitPiece) return
+
+  gameState.board[hitRow][hitCol] = null
+
+  if (hitPiece.type === 'pharaoh') {
+    gameState.gameOver = true
+    gameState.winner = gameState.currentPlayer
+    const display = document.getElementById('current-player-display')
+    if (display) {
+      const winnerName = gameState.currentPlayer === RED ? 'Red' : 'Silver'
+      display.textContent = `Player ${winnerName} Wins!`
+      display.className = `current-player player-${winnerName.toLowerCase()}`
+    }
+  }
+}
+
+function ensureLaserLayer() {
+  const boardElement = document.getElementById('game-board')
+  if (!boardElement) return
+
+  if (!laserLayerElement || !boardElement.contains(laserLayerElement)) {
+    laserLayerElement = document.createElement('div')
+    laserLayerElement.className = 'laser-layer'
+    boardElement.insertBefore(laserLayerElement, boardElement.firstChild)
+  }
+}
+
+function clearLaserLayer() {
+  if (laserLayerElement) {
+    laserLayerElement.innerHTML = ''
+  }
+}
+
+function getSquareCenter(row, col, boardRect) {
+  const square = document.querySelector(`[data-row="${row}"][data-col="${col}"]`)
+  if (!square) return null
+
+  const squareRect = square.getBoundingClientRect()
+  return {
+    x: squareRect.left - boardRect.left + (boardRect.width / BOARD_COLS) / 2,
+    y: squareRect.top - boardRect.top + (boardRect.height / BOARD_ROWS) / 2
+  }
+}
+
+function findCurrentPlayerSphinx() {
+  for (let row = 0; row < BOARD_ROWS; row += 1) {
+    for (let col = 0; col < BOARD_COLS; col += 1) {
+      const piece = gameState.board[row][col]
+      if (piece && piece.type === 'sphinx' && piece.player === gameState.currentPlayer) {
+        return { row, col, facing: piece.facing }
+      }
+    }
+  }
+
+  return null
 }
 
 // Handle game reset
@@ -713,6 +1046,13 @@ function handleResetGame() {
   gameState.winner = null
   gameState.actionTaken = false
   
+  clearLaserLayer()
+  laserActive = false
+  if (activeLaserTimeout) {
+    clearTimeout(activeLaserTimeout)
+    activeLaserTimeout = null
+  }
+
   initGame()
 }
 
