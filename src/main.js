@@ -451,9 +451,18 @@ function handleSquareClick(event) {
       // Moving to a highlighted square
       movePiece(gameState.selectedSquare.row, gameState.selectedSquare.col, row, col)
     } else if (piece && piece.player === gameState.currentPlayer) {
-      // Selecting a different piece
+      // Check if clicking the same piece (cancel) or a different piece
+      if (row === gameState.selectedSquare.row && col === gameState.selectedSquare.col) {
+        // Clicking the same piece - cancel selection
+        clearSelection()
+      } else {
+        // Selecting a different piece
+        clearSelection()
+        selectPiece(row, col, piece)
+      }
+    } else {
+      // Clicking empty square or opponent piece - cancel selection
       clearSelection()
-      selectPiece(row, col, piece)
     }
   }
 }
@@ -517,10 +526,10 @@ function isValidMove(fromRow, fromCol, toRow, toCol, piece, targetPiece) {
   // Can't move to same square
   if (fromRow === toRow && fromCol === toCol) return false
   
-  // Check reserved squares
+  // Check reserved squares - pieces cannot move to squares of the opposite color
   const squareKey = `${toRow}-${toCol}`
-  if (gameState.currentPlayer === RED && RESERVED_RED.has(squareKey)) return false
-  if (gameState.currentPlayer === SILVER && RESERVED_SILVER.has(squareKey)) return false
+  if (gameState.currentPlayer === RED && RESERVED_SILVER.has(squareKey)) return false
+  if (gameState.currentPlayer === SILVER && RESERVED_RED.has(squareKey)) return false
   
   // Sphinx cannot move
   if (piece.type === 'sphinx') return false
@@ -554,41 +563,45 @@ function addPieceControls(row, col, piece) {
     const rotationControls = document.createElement('div')
     rotationControls.className = 'rotation-controls'
     
-    const rotateLeftBtn = document.createElement('button')
-    rotateLeftBtn.className = 'rotation-btn'
-    rotateLeftBtn.textContent = '↶'
-    rotateLeftBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      rotatePiece(row, col, 'left')
-    })
+    if (piece.type === 'sphinx') {
+      // Sphinx only has one rotation button (they can only rotate in one direction)
+      const rotateBtn = document.createElement('button')
+      rotateBtn.className = 'rotation-btn'
+      rotateBtn.textContent = '↷'
+      rotateBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        rotatePiece(row, col, 'right')
+      })
+      rotationControls.appendChild(rotateBtn)
+    } else {
+      // Other pieces have both left and right rotation buttons
+      const rotateLeftBtn = document.createElement('button')
+      rotateLeftBtn.className = 'rotation-btn'
+      rotateLeftBtn.textContent = '↶'
+      rotateLeftBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        rotatePiece(row, col, 'left')
+      })
+      
+      const rotateRightBtn = document.createElement('button')
+      rotateRightBtn.className = 'rotation-btn'
+      rotateRightBtn.textContent = '↷'
+      rotateRightBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        rotatePiece(row, col, 'right')
+      })
+      
+      rotationControls.appendChild(rotateLeftBtn)
+      rotationControls.appendChild(rotateRightBtn)
+    }
     
-    const rotateRightBtn = document.createElement('button')
-    rotateRightBtn.className = 'rotation-btn'
-    rotateRightBtn.textContent = '↷'
-    rotateRightBtn.addEventListener('click', (e) => {
-      e.stopPropagation()
-      rotatePiece(row, col, 'right')
-    })
-    
-    rotationControls.appendChild(rotateLeftBtn)
-    rotationControls.appendChild(rotateRightBtn)
     pieceContainer.appendChild(rotationControls)
   }
-  
-  // Add cancel button
-  const cancelBtn = document.createElement('button')
-  cancelBtn.className = 'cancel-btn'
-  cancelBtn.textContent = '×'
-  cancelBtn.addEventListener('click', (e) => {
-    e.stopPropagation()
-    clearSelection()
-  })
-  pieceContainer.appendChild(cancelBtn)
 }
 
 // Remove piece controls
 function removePieceControls() {
-  document.querySelectorAll('.rotation-controls, .cancel-btn').forEach(el => {
+  document.querySelectorAll('.rotation-controls').forEach(el => {
     el.remove()
   })
 }
