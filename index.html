@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Khet - Laser Chess</title>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Khet - Laser Chess</h1>
+      </header>
+      
+      <main>
+        <div id="game-board" class="board"></div>
+        
+        <div class="game-controls">
+          <div id="current-player-display" class="current-player">Player 1's Turn</div>
+          <button id="fire-laser" class="btn btn-primary">Fire Laser</button>
+        </div>
+        
+        <div class="instructions">
+          <h3>How to Play</h3>
+          <ul>
+            <li>Click a piece to select it</li>
+            <li>Move or rotate the selected piece</li>
+            <li>Click "Fire Laser" to shoot</li>
+            <li>Eliminate your opponent's Pharaoh to win!</li>
+          </ul>
+        </div>
+        
+        <div class="controls">
+          <button id="reset-game" class="btn btn-secondary">Reset Game</button>
+        </div>
+      </main>
+    </div>
+    
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
