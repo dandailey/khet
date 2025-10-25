@@ -237,9 +237,11 @@ main {
   box-shadow: 0 0 18px rgba(255, 55, 95, 0.9), 0 0 28px rgba(255, 120, 140, 0.8);
   opacity: 0;
   animation: laser-pulse 1.5s ease-in-out forwards;
-  pointer-events: none;
-  border-radius: 999px;
-  transform-origin: left center;
+}
+
+.laser-path-persistent {
+  animation: none;
+  opacity: 1;
 }
 
 .laser-impact {
@@ -251,6 +253,11 @@ main {
   box-shadow: 0 0 18px rgba(255, 236, 130, 0.9), 0 0 30px rgba(255, 55, 95, 0.6);
   animation: laser-impact-pulse 1.5s ease-in-out forwards;
   pointer-events: none;
+}
+
+.laser-impact-persistent {
+  animation: none;
+  opacity: 1;
 }
 
 @keyframes laser-pulse {
@@ -289,6 +296,64 @@ main {
     opacity: 0;
     transform: scale(1.1);
   }
+}
+
+/* Laser tip glow effect for active player */
+.laser-tip-glow {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 55, 95, 0.3) 0%, rgba(255, 55, 95, 0.1) 50%, transparent 70%);
+  pointer-events: none;
+  z-index: 1;
+  animation: laser-tip-glow-pulse 2s ease-in-out infinite;
+}
+
+.laser-tip-glow.active {
+  animation: laser-tip-glow-active 1.5s ease-in-out forwards;
+}
+
+@keyframes laser-tip-glow-pulse {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 0.8;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes laser-tip-glow-active {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.9);
+  }
+  15% {
+    opacity: 1.2;
+    transform: scale(1.3);
+  }
+  80% {
+    opacity: 1.2;
+    transform: scale(1.3);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+
+/* Enhanced laser tip outline - only for active player */
+.piece-svg.active-player .piece-tip {
+  fill: #ff5c5c;
+  stroke: #ff2d2d;
+  stroke-width: 2px;
+  filter: drop-shadow(0 0 4px rgba(255, 45, 45, 0.6));
 }
 
 .controls {
@@ -423,35 +488,89 @@ main {
 /* Rotation controls */
 .rotation-controls {
   position: absolute;
-  top: -50px;
+  top: -6px; /* Only 20% of 28px button height sticks out above */
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 10px;
+  gap: 30px; /* Increased gap to spread buttons wider */
   z-index: 10;
 }
 
+/* Position sphinx rotation buttons on different edges */
+.rotation-btn-top {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.rotation-btn-top:hover {
+  transform: translateX(-50%);
+}
+
+.rotation-btn-bottom {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.rotation-btn-bottom:hover {
+  transform: translateX(-50%);
+}
+
+.rotation-btn-left {
+  position: absolute;
+  top: 50%;
+  left: -6px;
+  transform: translateY(-50%);
+}
+
+.rotation-btn-left:hover {
+  transform: translateY(-50%);
+}
+
+.rotation-btn-right {
+  position: absolute;
+  top: 50%;
+  right: -6px;
+  transform: translateY(-50%);
+}
+
+.rotation-btn-right:hover {
+  transform: translateY(-50%);
+}
+
 .rotation-btn {
-  width: 40px;
-  height: 40px;
-  border: none;
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(100, 100, 100, 0.8);
   border-radius: 50%;
-  background: rgba(61, 123, 255, 0.9);
-  color: white;
-  font-size: 18px;
+  background: rgba(80, 80, 80, 0.95);
+  color: rgba(200, 200, 200, 0.9);
+  font-size: 18px; /* Reduced proportionally from 26px */
   font-weight: bold;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
 }
 
 .rotation-btn:hover {
-  background: rgba(61, 123, 255, 1);
-  transform: scale(1.1);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  background: rgba(60, 60, 60, 1);
+  border-color: rgba(80, 80, 80, 1);
+  color: rgba(220, 220, 220, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.rotation-btn-ccw {
+  transform: rotate(180deg);
+}
+
+.rotation-btn-ccw:hover {
+  transform: rotate(180deg) scale(1.05);
 }
 
 
@@ -464,4 +583,57 @@ main {
   align-items: center;
   justify-content: center;
   z-index: 3;
+}
+
+/* Game Over Overlay */
+.game-over-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+  transition: opacity 0.5s ease;
+}
+
+.game-over-overlay.hidden {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.game-over-content {
+  text-align: center;
+  padding: 40px 60px;
+  background: rgba(30, 32, 38, 0.6);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+}
+
+.winner-text {
+  font-size: 3rem;
+  margin-bottom: 30px;
+  text-shadow: 0 0 20px currentColor;
+  font-weight: bold;
+}
+
+.winner-text.red {
+  color: var(--player-red);
+}
+
+.winner-text.silver {
+  color: var(--player-silver);
+}
+
+.game-over-overlay .btn {
+  font-size: 1.2rem;
+  padding: 12px 32px;
+  min-width: 180px;
 }

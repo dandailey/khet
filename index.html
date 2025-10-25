@@ -15,18 +15,12 @@
       <main>
         <div id="game-board" class="board"></div>
         
-        <div class="game-controls">
-          <div id="current-player-display" class="current-player">Player 1's Turn</div>
-        </div>
-        
-        <div class="instructions">
-          <h3>How to Play</h3>
-          <ul>
-            <li>Click a piece to select it</li>
-            <li>Move or rotate the selected piece</li>
-            <li>Your laser fires automatically after your move!</li>
-            <li>Eliminate your opponent's Pharaoh to win!</li>
-          </ul>
+        <!-- Game Over Overlay -->
+        <div id="game-over-overlay" class="game-over-overlay hidden">
+          <div class="game-over-content">
+            <h2 id="winner-text" class="winner-text"></h2>
+            <button id="play-again-btn" class="btn btn-primary">Play Again</button>
+          </div>
         </div>
         
         <div class="controls">

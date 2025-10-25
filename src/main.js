@@ -125,9 +125,6 @@ function initGame() {
   // Render the board
   renderBoard()
   
-  // Update player display
-  updatePlayerDisplay()
-  
   // Set up event listeners
   setupEventListeners()
   
@@ -189,7 +186,10 @@ function renderBoard() {
   const boardElement = document.getElementById('game-board')
   boardElement.innerHTML = ''
   ensureLaserLayer()
-  clearLaserLayer()
+  // Don't clear laser layer if game is over (keep winning laser path visible)
+  if (!gameState.gameOver) {
+    clearLaserLayer()
+  }
   
   for (let row = 0; row < 8; row += 1) {
     for (let col = 0; col < 10; col += 1) {
@@ -217,7 +217,8 @@ function renderBoard() {
         
         const pieceElement = document.createElement('div')
         pieceElement.className = `piece player${piece.player}`
-        pieceElement.innerHTML = getPieceSVG(piece)
+        const isActivePlayer = piece.player === gameState.currentPlayer
+        pieceElement.innerHTML = getPieceSVG(piece, isActivePlayer)
         
         pieceContainer.appendChild(pieceElement)
         square.appendChild(pieceContainer)
@@ -233,17 +234,72 @@ function renderBoard() {
       boardElement.appendChild(square)
     }
   }
+  
+  // Add laser tip glow for current player's sphinx
+  addLaserTipGlow()
+}
+
+// Add laser tip glow effect around current player's sphinx
+function addLaserTipGlow() {
+  if (gameState.gameOver) return
+  
+  const sphinxInfo = findCurrentPlayerSphinx()
+  if (!sphinxInfo) return
+  
+  const { row, col, facing } = sphinxInfo
+  const boardElement = document.getElementById('game-board')
+  if (!boardElement) return
+  
+  const boardRect = boardElement.getBoundingClientRect()
+  const squareWidth = boardRect.width / BOARD_COLS
+  const squareHeight = boardRect.height / BOARD_ROWS
+  
+  // Calculate the position of the laser tip based on sphinx facing
+  const squareCenter = getSquareCenter(row, col, boardRect)
+  if (!squareCenter) return
+  
+  // Calculate laser tip position based on facing direction
+  const tipOffset = 20 // Distance from center to tip (matches sphinx SVG tip position)
+  const directionVector = CARDINAL_VECTORS[facing]
+  const tipX = squareCenter.x + directionVector.col * tipOffset
+  const tipY = squareCenter.y + directionVector.row * tipOffset
+  
+  // Create glow element
+  const glowElement = document.createElement('div')
+  glowElement.className = 'laser-tip-glow'
+  glowElement.style.left = `${tipX - 22}px` // Center the 40px glow, offset 2px left
+  glowElement.style.top = `${tipY - 20}px`
+  
+  // Add to board
+  boardElement.appendChild(glowElement)
+  
+  // If laser is active, add the active class
+  if (laserActive) {
+    glowElement.classList.add('active')
+  }
+}
+
+// Update laser tip glow state
+function updateLaserTipGlow() {
+  const glowElement = document.querySelector('.laser-tip-glow')
+  if (!glowElement) return
+  
+  if (laserActive) {
+    glowElement.classList.add('active')
+  } else {
+    glowElement.classList.remove('active')
+  }
 }
 
 // Create SVG for a piece based on type and facing
-function getPieceSVG(piece) {
+function getPieceSVG(piece, isActivePlayer = false) {
   const size = 60
   const center = size / 2
   const rotation = getRotationDegrees(piece.facing)
 
   switch (piece.type) {
     case 'sphinx':
-      return createSphinxSVG(size, center, rotation, piece.player)
+      return createSphinxSVG(size, center, rotation, piece.player, isActivePlayer)
     case 'pharaoh':
       return createPharaohSVG(size, center, piece.player)
     case 'pyramid':
@@ -271,10 +327,11 @@ function getRotationDegrees(facing) {
   }
 }
 
-function createSphinxSVG(size, center, rotation, player) {
+function createSphinxSVG(size, center, rotation, player, isActivePlayer = false) {
   const head = `M ${center} ${center - 20} L ${center + 22} ${center + 20} L ${center - 22} ${center + 20} Z`
+  const activeClass = isActivePlayer ? ' active-player' : ''
   return `
-    <svg viewBox="0 0 ${size} ${size}" class="piece-svg player${player}">
+    <svg viewBox="0 0 ${size} ${size}" class="piece-svg player${player}${activeClass}">
       <path d="${head}" class="piece-body" transform="rotate(${rotation} ${center} ${center})" />
       <polygon points="${center},${center - 20} ${center + 10},${center} ${center - 10},${center}" class="piece-tip" transform="rotate(${rotation} ${center} ${center})" />
     </svg>
@@ -437,20 +494,29 @@ function createScarabSVG(size, center, facing, player) {
 function setupEventListeners() {
   const boardElement = document.getElementById('game-board')
   const resetGameBtn = document.getElementById('reset-game')
+  const playAgainBtn = document.getElementById('play-again-btn')
   
   if (!listenersAttached) {
     boardElement.addEventListener('click', handleSquareClick)
     resetGameBtn.addEventListener('click', handleResetGame)
+    playAgainBtn.addEventListener('click', handlePlayAgain)
+    document.addEventListener('click', handleDocumentClick)
     listenersAttached = true
   }
 }
 
-// Update player display
-function updatePlayerDisplay() {
-  const display = document.getElementById('current-player-display')
-  const playerName = gameState.currentPlayer === RED ? 'Red' : 'Silver'
-  display.textContent = `Player ${playerName}'s Turn`
-  display.className = `current-player player-${playerName.toLowerCase()}`
+// Handle document clicks (for canceling piece selection when clicking outside board)
+function handleDocumentClick(event) {
+  if (gameState.gameOver) return
+  
+  // Check if the click is outside the game board
+  const boardElement = document.getElementById('game-board')
+  const clickedInsideBoard = boardElement.contains(event.target)
+  
+  // If clicking outside the board and we have a piece selected, cancel selection
+  if (!clickedInsideBoard && gameState.selectedPiece) {
+    clearSelection()
+  }
 }
 
 // Handle square clicks
@@ -458,7 +524,13 @@ function handleSquareClick(event) {
   if (gameState.gameOver) return
   
   const square = event.target.closest('.square')
-  if (!square) return
+  if (!square) {
+    // Clicked on board but not on a square - cancel piece selection
+    if (gameState.selectedPiece) {
+      clearSelection()
+    }
+    return
+  }
   
   const row = parseInt(square.dataset.row)
   const col = parseInt(square.dataset.col)
@@ -587,48 +659,65 @@ function addPieceControls(row, col, piece) {
   
   // Only add rotation controls if piece can rotate
   if (piece.type !== 'pharaoh') {
-    const rotationControls = document.createElement('div')
-    rotationControls.className = 'rotation-controls'
-    
     if (piece.type === 'sphinx') {
-      // Sphinx only has one rotation button (they can only rotate in one direction)
-      // Determine which direction the sphinx will rotate based on current facing
-      let isClockwise = false
-      let rotationDirection = 'right'
+      // Sphinx shows directional arrow pointing where it WOULD fire after clicking
+      // Add button directly to piece container (not wrapped in rotation-controls div)
+      let arrowSymbol = ''
+      let rotationDirection = ''
+      let buttonClass = 'rotation-btn'
       
       if (row === 0 && col === 0) {
-        // Red sphinx in top-left: E <-> S
-        // E→S is clockwise (90° right), S→E is counter-clockwise (90° left)
-        isClockwise = piece.facing === 'E'
-        rotationDirection = isClockwise ? 'right' : 'left'
+        // Red sphinx in top-left: can face E or S
+        if (piece.facing === 'E') {
+          // Currently facing East, clicking rotates to South
+          arrowSymbol = '↓' // South arrow (where it would fire after rotation)
+          rotationDirection = 'right'
+          buttonClass = 'rotation-btn rotation-btn-bottom' // Position on bottom edge
+        } else {
+          // Currently facing South, clicking rotates to East
+          arrowSymbol = '→' // East arrow (where it would fire after rotation)
+          rotationDirection = 'left'
+          buttonClass = 'rotation-btn rotation-btn-right' // Position on right edge
+        }
       } else if (row === 7 && col === 9) {
-        // Silver sphinx in bottom-right: W <-> N
-        // W→N is clockwise (90° right), N→W is counter-clockwise (90° left)
-        isClockwise = piece.facing === 'W'
-        rotationDirection = isClockwise ? 'right' : 'left'
+        // Silver sphinx in bottom-right: can face W or N
+        if (piece.facing === 'W') {
+          // Currently facing West, clicking rotates to North
+          arrowSymbol = '↑' // North arrow (where it would fire after rotation)
+          rotationDirection = 'right'
+          buttonClass = 'rotation-btn rotation-btn-top' // Position on top edge
+        } else {
+          // Currently facing North, clicking rotates to West
+          arrowSymbol = '←' // West arrow (where it would fire after rotation)
+          rotationDirection = 'left'
+          buttonClass = 'rotation-btn rotation-btn-left' // Position on left edge
+        }
       }
       
       const rotateBtn = document.createElement('button')
-      rotateBtn.className = 'rotation-btn'
-      rotateBtn.textContent = isClockwise ? '↷' : '↶'
+      rotateBtn.className = buttonClass
+      rotateBtn.textContent = arrowSymbol
       rotateBtn.addEventListener('click', (e) => {
         e.stopPropagation()
         rotatePiece(row, col, rotationDirection)
       })
-      rotationControls.appendChild(rotateBtn)
+      pieceContainer.appendChild(rotateBtn)
     } else {
+      // Other pieces have both left and right rotation buttons wrapped in a container
+      const rotationControls = document.createElement('div')
+      rotationControls.className = 'rotation-controls'
       // Other pieces have both left and right rotation buttons
       const rotateLeftBtn = document.createElement('button')
-      rotateLeftBtn.className = 'rotation-btn'
-      rotateLeftBtn.textContent = '↶'
+      rotateLeftBtn.className = 'rotation-btn rotation-btn-ccw'
+      rotateLeftBtn.textContent = '⤴'
       rotateLeftBtn.addEventListener('click', (e) => {
         e.stopPropagation()
         rotatePiece(row, col, 'left')
       })
       
       const rotateRightBtn = document.createElement('button')
-      rotateRightBtn.className = 'rotation-btn'
-      rotateRightBtn.textContent = '↷'
+      rotateRightBtn.className = 'rotation-btn rotation-btn-cw'
+      rotateRightBtn.textContent = '⤵'
       rotateRightBtn.addEventListener('click', (e) => {
         e.stopPropagation()
         rotatePiece(row, col, 'right')
@@ -636,15 +725,19 @@ function addPieceControls(row, col, piece) {
       
       rotationControls.appendChild(rotateLeftBtn)
       rotationControls.appendChild(rotateRightBtn)
+      pieceContainer.appendChild(rotationControls)
     }
-    
-    pieceContainer.appendChild(rotationControls)
   }
 }
 
 // Remove piece controls
 function removePieceControls() {
+  // Remove rotation controls wrappers (for non-sphinx pieces)
   document.querySelectorAll('.rotation-controls').forEach(el => {
+    el.remove()
+  })
+  // Remove individual rotation buttons (for sphinx pieces)
+  document.querySelectorAll('.rotation-btn-top, .rotation-btn-bottom, .rotation-btn-left, .rotation-btn-right').forEach(el => {
     el.remove()
   })
 }
@@ -743,7 +836,6 @@ function rotatePiece(row, col, direction) {
 function endTurn() {
   gameState.actionTaken = true
   gameState.currentPlayer = gameState.currentPlayer === RED ? SILVER : RED
-  updatePlayerDisplay()
   renderBoard()
 }
 
@@ -758,6 +850,9 @@ function handleFireLaser() {
   laserActive = true
   clearLaserLayer()
   renderLaserPath(path)
+  
+  // Update laser tip glow to active state
+  updateLaserTipGlow()
 
   const endpoint = path[path.length - 1]
   if (endpoint.hit && endpoint.hitPiece) {
@@ -769,10 +864,17 @@ function handleFireLaser() {
   }
 
   activeLaserTimeout = setTimeout(() => {
-    clearLaserLayer()
+    if (!gameState.gameOver) {
+      clearLaserLayer()
+    }
     laserActive = false
+    // Update laser tip glow back to normal state
+    updateLaserTipGlow()
     if (gameState.gameOver) {
-      renderBoard()
+      // Show the game over overlay after a brief delay to let the laser remain visible
+      setTimeout(() => {
+        showGameOverOverlay()
+      }, 800)
     } else {
       endTurn()
     }
@@ -962,6 +1064,19 @@ function renderLaserPath(path) {
   })
 }
 
+function persistLaserPath() {
+  if (!laserLayerElement) return
+
+  laserLayerElement.querySelectorAll('.laser-path').forEach(segment => {
+    segment.classList.add('laser-path-persistent')
+  })
+
+  const impact = laserLayerElement.querySelector('.laser-impact')
+  if (impact) {
+    impact.classList.add('laser-impact-persistent')
+  }
+}
+
 function handleLaserHit(endpoint) {
   const { hitPiece, hitRow, hitCol, absorbed } = endpoint
   if (!hitPiece) return
@@ -973,13 +1088,10 @@ function handleLaserHit(endpoint) {
 
   if (hitPiece.type === 'pharaoh') {
     gameState.gameOver = true
-    gameState.winner = gameState.currentPlayer
-    const display = document.getElementById('current-player-display')
-    if (display) {
-      const winnerName = gameState.currentPlayer === RED ? 'Red' : 'Silver'
-      display.textContent = `Player ${winnerName} Wins!`
-      display.className = `current-player player-${winnerName.toLowerCase()}`
-    }
+    // Winner is the OPPOSITE player - whoever shot their own pharaoh loses
+    gameState.winner = gameState.currentPlayer === RED ? SILVER : RED
+    // Overlay will be shown after the laser animation in handleFireLaser
+    persistLaserPath()
   }
 }
 
@@ -1026,8 +1138,64 @@ function findCurrentPlayerSphinx() {
 
 // Handle game reset
 function handleResetGame() {
+  showResetConfirmationOverlay()
+}
+
+// Show reset confirmation overlay
+function showResetConfirmationOverlay() {
+  const overlay = document.getElementById('game-over-overlay')
+  const winnerText = document.getElementById('winner-text')
+  const playAgainBtn = document.getElementById('play-again-btn')
+  
+  winnerText.textContent = 'Are you sure you want to reset the game?'
+  
+  // Remove existing cancel button if it exists
+  const existingCancelBtn = document.querySelector('.game-over-content .btn-secondary')
+  if (existingCancelBtn) {
+    existingCancelBtn.remove()
+  }
+  
+  // Add cancel button first (left side)
+  const cancelBtn = document.createElement('button')
+  cancelBtn.textContent = 'Nevermind'
+  cancelBtn.className = 'btn btn-secondary'
+  cancelBtn.style.marginRight = '10px'
+  cancelBtn.onclick = hideResetConfirmationOverlay
+  
+  // Update play again button to be reset button (right side)
+  playAgainBtn.textContent = 'Reset Game'
+  playAgainBtn.onclick = confirmResetGame
+  
+  // Insert cancel button before the reset button
+  playAgainBtn.parentNode.insertBefore(cancelBtn, playAgainBtn)
+  
+  overlay.classList.remove('hidden')
+}
+
+// Hide reset confirmation overlay
+function hideResetConfirmationOverlay() {
+  const overlay = document.getElementById('game-over-overlay')
+  const playAgainBtn = document.getElementById('play-again-btn')
+  
+  // Restore original play again button
+  playAgainBtn.textContent = 'Play Again'
+  playAgainBtn.onclick = handlePlayAgain
+  
+  // Remove cancel button
+  const cancelBtn = document.querySelector('.game-over-content .btn-secondary')
+  if (cancelBtn) {
+    cancelBtn.remove()
+  }
+  
+  overlay.classList.add('hidden')
+}
+
+// Confirm reset game
+function confirmResetGame() {
+  hideResetConfirmationOverlay()
+  
   console.log('Resetting game...')
-  gameState.currentPlayer = RED
+  gameState.currentPlayer = SILVER  // Silver always goes first
   gameState.selectedPiece = null
   gameState.selectedSquare = null
   gameState.gameOver = false
@@ -1042,6 +1210,54 @@ function handleResetGame() {
   }
 
   initGame()
+  updateLaserTipGlow() // Ensure laser tip glow reflects new current player
+}
+
+// Show game over overlay
+function showGameOverOverlay() {
+  const overlay = document.getElementById('game-over-overlay')
+  const winnerText = document.getElementById('winner-text')
+  
+  if (!overlay || !winnerText) return
+  
+  const winnerColor = gameState.winner === RED ? 'Red' : 'Silver'
+  const winnerClass = winnerColor.toLowerCase()
+  
+  winnerText.textContent = `${winnerColor.toUpperCase()} WINS!`
+  winnerText.className = `winner-text ${winnerClass}`
+  
+  overlay.classList.remove('hidden')
+}
+
+// Hide game over overlay
+function hideGameOverOverlay() {
+  const overlay = document.getElementById('game-over-overlay')
+  if (overlay) {
+    overlay.classList.add('hidden')
+  }
+}
+
+// Handle play again button
+function handlePlayAgain() {
+  hideGameOverOverlay()
+  
+  // Reset game state
+  gameState.currentPlayer = SILVER  // Silver always goes first
+  gameState.selectedPiece = null
+  gameState.selectedSquare = null
+  gameState.gameOver = false
+  gameState.winner = null
+  gameState.actionTaken = false
+  
+  clearLaserLayer()
+  laserActive = false
+  if (activeLaserTimeout) {
+    clearTimeout(activeLaserTimeout)
+    activeLaserTimeout = null
+  }
+
+  initGame()
+  updateLaserTipGlow() // Ensure laser tip glow reflects new current player
 }
 
 // Start the game when DOM is loaded
