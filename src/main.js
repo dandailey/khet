@@ -282,69 +282,37 @@ function createSphinxSVG(size, center, rotation, player) {
 }
 
 function createPharaohSVG(size, center, player) {
-  const headdressWidth = size * 0.62
-  const headdressHeight = size * 0.64
-  const headdressTop = center - headdressHeight / 2
-  const headdressBottom = center + headdressHeight / 2
-  const headdressLeft = center - headdressWidth / 2
-  const headdressRight = center + headdressWidth / 2
-
-  const faceRadiusX = headdressWidth * 0.22
-  const faceRadiusY = headdressHeight * 0.32
-  const faceCenterY = center + headdressHeight * 0.05
-
-  const collarWidth = size * 0.52
-  const collarHeight = size * 0.16
-  const baseWidth = size * 0.34
-  const baseHeight = size * 0.2
-  const baseTop = headdressBottom + size * 0.02
+  const width = size * 0.62
+  const height = size * 0.64
+  const left = center - width / 2
+  const right = center + width / 2
+  const top = center - height / 2
+  const bottom = center + height / 2
   const gemRadius = size * 0.055
-  const chestTop = headdressBottom - collarHeight * 0.3
 
-  const headdressPath = [
-    `M ${headdressLeft} ${headdressBottom - size * 0.08}`,
-    `Q ${center - headdressWidth * 0.62} ${headdressTop + headdressHeight * 0.28} ${center} ${headdressTop}`,
-    `Q ${center + headdressWidth * 0.62} ${headdressTop + headdressHeight * 0.28} ${headdressRight} ${headdressBottom - size * 0.08}`,
-    `L ${center + collarWidth / 2} ${headdressBottom}`,
-    `L ${center - collarWidth / 2} ${headdressBottom}`,
+  // Body outline - an elongated pentagon/headdress shape
+  const bodyPath = [
+    `M ${left} ${bottom - size * 0.08}`,
+    `Q ${center - width * 0.62} ${top + height * 0.28} ${center} ${top}`,
+    `Q ${center + width * 0.62} ${top + height * 0.28} ${right} ${bottom - size * 0.08}`,
+    `L ${center + width * 0.42} ${bottom}`,
+    `L ${center - width * 0.42} ${bottom}`,
     'Z'
   ].join(' ')
 
-  const torsoPath = [
-    `M ${center - collarWidth / 2} ${headdressBottom}`,
-    `L ${center - baseWidth / 2} ${chestTop + baseHeight}`,
-    `L ${center + baseWidth / 2} ${chestTop + baseHeight}`,
-    `L ${center + collarWidth / 2} ${headdressBottom}`,
-    'Z'
-  ].join(' ')
-
-  const stripeLeft = [
-    `M ${center - faceRadiusX * 1.5} ${headdressTop + headdressHeight * 0.22}`,
-    `Q ${center - headdressWidth * 0.32} ${center} ${center - collarWidth / 2 + collarHeight * 0.5} ${headdressBottom - collarHeight * 0.28}`
-  ].join(' ')
-
-  const stripeRight = [
-    `M ${center + faceRadiusX * 1.5} ${headdressTop + headdressHeight * 0.22}`,
-    `Q ${center + headdressWidth * 0.32} ${center} ${center + collarWidth / 2 - collarHeight * 0.5} ${headdressBottom - collarHeight * 0.28}`
-  ].join(' ')
-
-  const browPath = [
-    `M ${center - faceRadiusX * 0.8} ${faceCenterY - faceRadiusY * 0.55}`,
-    `Q ${center} ${faceCenterY - faceRadiusY * 0.85} ${center + faceRadiusX * 0.8} ${faceCenterY - faceRadiusY * 0.55}`
-  ].join(' ')
+  const lineWidth = size * 0.4
+  const lineLeft = center - lineWidth / 2
+  const lineRight = center + lineWidth / 2
+  const lineTop = center - height * 0.43
+  const lineBottom = center + height * 0.28
 
   return `
     <svg viewBox="0 0 ${size} ${size}" class="piece-svg player${player}">
-      <path d="${headdressPath}" class="piece-body pharaoh-headdress" />
-      <ellipse cx="${center}" cy="${faceCenterY}" rx="${faceRadiusX}" ry="${faceRadiusY}" class="pharaoh-face" />
-      <path d="${torsoPath}" class="piece-body pharaoh-torso" />
-      <rect x="${center - collarWidth / 2}" y="${headdressBottom - collarHeight}" width="${collarWidth}" height="${collarHeight}" rx="${collarHeight / 3}" class="pharaoh-collar" />
-      <rect x="${center - baseWidth / 2}" y="${baseTop}" width="${baseWidth}" height="${baseHeight}" rx="${baseHeight / 3}" class="pharaoh-base" />
-      <circle cx="${center}" cy="${chestTop + baseHeight * 0.45}" r="${gemRadius}" class="pharaoh-gem" />
-      <path d="${stripeLeft}" class="pharaoh-stripe" />
-      <path d="${stripeRight}" class="pharaoh-stripe" />
-      <path d="${browPath}" class="pharaoh-brow" />
-      <line x1="${center}" y1="${faceCenterY - faceRadiusY * 0.45}" x2="${center}" y2="${faceCenterY + faceRadiusY * 0.6}" class="pharaoh-centerline" />
+      <path d="${bodyPath}" class="piece-body" />
+      <line x1="${lineLeft}" y1="${lineTop}" x2="${lineLeft}" y2="${lineBottom}" class="pharaoh-line" />
+      <line x1="${lineRight}" y1="${lineTop}" x2="${lineRight}" y2="${lineBottom}" class="pharaoh-line" />
+      <path d="M ${lineLeft} ${lineBottom} Q ${center} ${lineBottom + size * 0.1} ${lineRight} ${lineBottom}" class="pharaoh-arc" />
+      <circle cx="${center}" cy="${lineBottom}" r="${gemRadius}" class="pharaoh-gem" />
     </svg>
   `
 }
@@ -624,12 +592,28 @@ function addPieceControls(row, col, piece) {
     
     if (piece.type === 'sphinx') {
       // Sphinx only has one rotation button (they can only rotate in one direction)
+      // Determine which direction the sphinx will rotate based on current facing
+      let isClockwise = false
+      let rotationDirection = 'right'
+      
+      if (row === 0 && col === 0) {
+        // Red sphinx in top-left: E <-> S
+        // E→S is clockwise (90° right), S→E is counter-clockwise (90° left)
+        isClockwise = piece.facing === 'E'
+        rotationDirection = isClockwise ? 'right' : 'left'
+      } else if (row === 7 && col === 9) {
+        // Silver sphinx in bottom-right: W <-> N
+        // W→N is clockwise (90° right), N→W is counter-clockwise (90° left)
+        isClockwise = piece.facing === 'W'
+        rotationDirection = isClockwise ? 'right' : 'left'
+      }
+      
       const rotateBtn = document.createElement('button')
       rotateBtn.className = 'rotation-btn'
-      rotateBtn.textContent = '↷'
+      rotateBtn.textContent = isClockwise ? '↷' : '↶'
       rotateBtn.addEventListener('click', (e) => {
         e.stopPropagation()
-        rotatePiece(row, col, 'right')
+        rotatePiece(row, col, rotationDirection)
       })
       rotationControls.appendChild(rotateBtn)
     } else {
@@ -898,8 +882,9 @@ function resolveLaserInteraction(piece, direction) {
   }
 
   if (piece.type === 'anubis') {
-    const frontDirection = OPPOSITE_DIRECTIONS[piece.facing]
-    if (direction === frontDirection) {
+    // Anubis shielded side is the same as its facing direction (the long side of trapezoid)
+    const shieldedDirection = piece.facing
+    if (direction === shieldedDirection) {
       return { type: 'absorb' }
     }
 
@@ -978,10 +963,13 @@ function renderLaserPath(path) {
 }
 
 function handleLaserHit(endpoint) {
-  const { hitPiece, hitRow, hitCol } = endpoint
+  const { hitPiece, hitRow, hitCol, absorbed } = endpoint
   if (!hitPiece) return
 
-  gameState.board[hitRow][hitCol] = null
+  // Only remove the piece if it was destroyed, not absorbed by Anubis shield
+  if (!absorbed) {
+    gameState.board[hitRow][hitCol] = null
+  }
 
   if (hitPiece.type === 'pharaoh') {
     gameState.gameOver = true
