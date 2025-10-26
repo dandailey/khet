@@ -28,7 +28,7 @@ export function traceLaser(state, player) {
   let direction = sphinx.piece.facing
   
   // Convert facing to cardinal direction for movement
-  const cardinalDirection = facingToCardinal(direction)
+  let cardinalDirection = facingToCardinal(direction)
   if (!cardinalDirection) {
     return { path: [], hits: [], winner: null }
   }
@@ -56,7 +56,9 @@ export function traceLaser(state, player) {
     }
     
     // Hit a piece - determine what happens
-    const hitResult = processLaserHit(piece, cardinalDirection, player)
+    // IMPORTANT: process hit using the ENTRY direction (opposite of travel)
+    const entryDirection = OPPOSITE_DIRECTIONS[cardinalDirection]
+    const hitResult = processLaserHit(piece, entryDirection, player)
     
     if (hitResult.destroyed) {
       hits.push({

@@ -22,13 +22,19 @@ export async function chooseMove(state, player, options = {}) {
     return null // No legal moves
   }
   
-  // Filter out moves that lead to immediate self-mate
+  // Filter out obviously bad moves: any move that destroys one of our pieces
+  // after our own laser fires (unless it immediately wins)
   const safeMoves = legalMoves.filter(move => {
     const newState = applyMove(state, move)
     const afterLaser = resolveLaser(newState, player)
+    const { hits, winner } = afterLaser.laserResult
     
-    // Check if this move leads to pharaoh death
-    return !afterLaser.laserResult.winner || afterLaser.laserResult.winner === player
+    // Allow if we immediately win
+    if (winner && winner === player) return true
+    
+    // If any of our own pieces would be destroyed by our shot, treat as unsafe
+    const selfLoss = hits.some(h => h.destroyed && h.piece && h.piece.player === player)
+    return !selfLoss
   })
   
   // Use safe moves if available, otherwise use all moves
@@ -40,7 +46,21 @@ export async function chooseMove(state, player, options = {}) {
     const afterLaser = resolveLaser(newState, player)
     const finalState = switchPlayer(afterLaser.newState)
     
-    const score = evaluate(finalState, player)
+    // Heuristic: reward capturing opponent pieces, heavily penalize self-destruction
+    // This compounds with the board evaluation to strongly avoid suicides.
+    const { hits, winner } = afterLaser.laserResult
+    let captureDelta = 0
+    if (hits && hits.length > 0) {
+      for (const h of hits) {
+        if (!h.destroyed || !h.piece) continue
+        if (h.piece.player === player) captureDelta -= 4 // strong penalty for self-capture
+        else captureDelta += 2 // bonus for capturing opponent material
+      }
+    }
+    // Winning is best
+    if (winner && winner === player) captureDelta += 1000
+    
+    const score = evaluate(finalState, player) + captureDelta
     
     return { move, score }
   })
@@ -48,10 +68,10 @@ export async function chooseMove(state, player, options = {}) {
   // Sort by score (highest first)
   moveScores.sort((a, b) => b.score - a.score)
   
-  // Add some randomness to avoid predictability
-  const topMoves = moveScores.slice(0, Math.min(3, moveScores.length))
+  // Slightly reduce randomness: pick from top 2 when available
+  const topBand = Math.min(2, moveScores.length)
+  const topMoves = moveScores.slice(0, topBand)
   const randomIndex = Math.floor(rngSeed * topMoves.length)
-  
   const chosenMove = topMoves[randomIndex].move
   
   // Simulate the move and laser firing

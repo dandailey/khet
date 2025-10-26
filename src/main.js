@@ -1,16 +1,7 @@
 // Khet - Laser Chess Main Entry Point
 
 import "./style.css"
-import { 
-  createInitialState, cloneState, getPieceAt, setPieceAt,
-  generateLegalMoves, applyMove, switchPlayer,
-  resolveLaser, traceLaser,
-  evaluate,
-  chooseMoveEasy, shouldFireLaserEasy,
-  RED, SILVER, GAME_MODES, DIRECTIONS, CARDINAL_VECTORS,
-  OPPOSITE_DIRECTIONS, RESERVED_RED, RESERVED_SILVER,
-  BOARD_ROWS, BOARD_COLS
-} from './game/index.js'
+import { chooseMoveEasy } from './game/index.js'
 
 // Direction helpers (clockwise starting at north)
 const DIRECTIONS = {
@@ -135,9 +126,6 @@ function initGame() {
 
   // Render the board
   renderBoard()
-  
-  // Update current player display
-  updateCurrentPlayerDisplay()
   
   // Set up event listeners
   setupEventListeners()
@@ -856,9 +844,6 @@ function endTurn() {
   gameState.actionTaken = true
   gameState.currentPlayer = gameState.currentPlayer === RED ? SILVER : RED
   
-  // Update current player display
-  updateCurrentPlayerDisplay()
-  
   // Check if it's AI's turn
   if (isAITurn()) {
     handleAITurn()
@@ -871,8 +856,8 @@ function endTurn() {
 function isAITurn() {
   if (gameState.gameMode === 'pvp') return false
   
-  // In PvC modes, Silver is always the AI
-  return gameState.currentPlayer === SILVER
+  // In PvC modes, Red is the AI; human plays Silver first
+  return gameState.currentPlayer === RED
 }
 
 // Handle AI turn
@@ -883,11 +868,14 @@ async function handleAITurn() {
   try {
     // Convert current game state to engine format
     const engineState = convertToEngineState()
+    console.log('AI turn - engine state:', engineState)
     
-    // Get AI move
-    const aiResult = await chooseMoveEasy(engineState, SILVER, { timeMs: 100 })
+    // Get AI move (AI plays Red)
+    const aiResult = await chooseMoveEasy(engineState, 'red', { timeMs: 100 })
+    console.log('AI result:', aiResult)
     
     if (aiResult && aiResult.move) {
+      console.log('AI making move:', aiResult.move)
       // Apply AI move
       applyAIMove(aiResult.move)
       
@@ -896,6 +884,7 @@ async function handleAITurn() {
         handleFireLaser()
       }, 500) // Small delay to show the move
     } else {
+      console.log('AI has no legal moves, ending turn')
       // No legal moves, end turn
       endTurn()
     }
@@ -911,58 +900,46 @@ async function handleAITurn() {
 // Show AI thinking indicator
 function showAIThinking() {
   const thinkingElement = document.getElementById('ai-thinking')
-  const playerElement = document.getElementById('current-player-display')
-  
   if (thinkingElement) thinkingElement.classList.remove('hidden')
-  if (playerElement) playerElement.classList.add('hidden')
 }
 
 // Hide AI thinking indicator
 function hideAIThinking() {
   const thinkingElement = document.getElementById('ai-thinking')
-  const playerElement = document.getElementById('current-player-display')
-  
   if (thinkingElement) thinkingElement.classList.add('hidden')
-  if (playerElement) playerElement.classList.remove('hidden')
 }
 
 // Disable human input during AI turn
 function disableHumanInput() {
   const board = document.getElementById('game-board')
-  const fireBtn = document.getElementById('fire-laser-btn')
   
   if (board) board.style.pointerEvents = 'none'
-  if (fireBtn) fireBtn.disabled = true
 }
 
 // Enable human input after AI turn
 function enableHumanInput() {
   const board = document.getElementById('game-board')
-  const fireBtn = document.getElementById('fire-laser-btn')
   
   if (board) board.style.pointerEvents = 'auto'
-  if (fireBtn) fireBtn.disabled = false
-}
-
-// Update current player display
-function updateCurrentPlayerDisplay() {
-  const display = document.getElementById('current-player-display')
-  if (!display) return
-  
-  const playerName = gameState.currentPlayer === RED ? 'Red' : 'Silver'
-  const playerClass = gameState.currentPlayer === RED ? 'player-red' : 'player-silver'
-  
-  display.textContent = `Player ${playerName}'s Turn`
-  display.className = `current-player ${playerClass}`
 }
 
 // Convert current game state to engine format
 function convertToEngineState() {
+  const mapPlayerToString = (p) => (p === RED ? 'red' : 'silver')
+  const mappedBoard = gameState.board.map(row => row.map(cell => {
+    if (!cell) return null
+    return {
+      type: cell.type,
+      player: typeof cell.player === 'number' ? mapPlayerToString(cell.player) : cell.player,
+      facing: cell.facing
+    }
+  }))
+
   return {
-    currentPlayer: gameState.currentPlayer,
-    board: gameState.board,
+    currentPlayer: mapPlayerToString(gameState.currentPlayer),
+    board: mappedBoard,
     gameOver: gameState.gameOver,
-    winner: gameState.winner,
+    winner: gameState.winner ? mapPlayerToString(gameState.winner) : null,
     gameMode: gameState.gameMode
   }
 }
@@ -1418,7 +1395,7 @@ function confirmResetGame() {
   hideResetConfirmationOverlay()
   
   console.log('Resetting game...')
-  gameState.currentPlayer = SILVER  // Silver always goes first
+  gameState.currentPlayer = SILVER  // Human (Silver) always goes first
   gameState.selectedPiece = null
   gameState.selectedSquare = null
   gameState.gameOver = false
@@ -1487,7 +1464,7 @@ function handleModeSelection(mode) {
   hideModeSelection()
   
   // Reset game state
-  gameState.currentPlayer = SILVER  // Silver always goes first
+  gameState.currentPlayer = SILVER  // Human (Silver) always goes first
   gameState.selectedPiece = null
   gameState.selectedSquare = null
   gameState.gameOver = false
