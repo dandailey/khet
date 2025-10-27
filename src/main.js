@@ -769,6 +769,7 @@ function movePiece(fromRow, fromCol, toRow, toCol) {
   renderBoard()
   
   // Use setTimeout to ensure the DOM updates before firing laser
+  disableHumanInput()
   setTimeout(() => {
     handleFireLaser()
   }, 50)
@@ -834,6 +835,7 @@ function rotatePiece(row, col, direction) {
   renderBoard()
   
   // Use setTimeout to ensure the DOM updates before firing laser
+  disableHumanInput()
   setTimeout(() => {
     handleFireLaser()
   }, 50)
@@ -844,10 +846,13 @@ function endTurn() {
   gameState.actionTaken = true
   gameState.currentPlayer = gameState.currentPlayer === RED ? SILVER : RED
   
+  console.log('endTurn called, current player:', gameState.currentPlayer, 'gameMode:', gameState.gameMode, 'isAITurn:', isAITurn())
+  
   // Check if it's AI's turn
   if (isAITurn()) {
     handleAITurn()
   } else {
+    enableHumanInput()
     renderBoard()
   }
 }
@@ -871,7 +876,7 @@ async function handleAITurn() {
     console.log('AI turn - engine state:', engineState)
     
     // Get AI move (AI plays Red)
-    const aiResult = await chooseMoveEasy(engineState, 'red', { timeMs: 100 })
+    const aiResult = await chooseMoveEasy(engineState, 'red', { timeMs: 100, debug: true })
     console.log('AI result:', aiResult)
     
     if (aiResult && aiResult.move) {
@@ -980,8 +985,15 @@ function handleFireLaser() {
   if (gameState.gameOver) return
   if (laserActive) return
   
+  disableHumanInput()
+
   const path = computeLaserPath()
-  if (!path || path.length === 0) return
+  if (!path || path.length === 0) {
+    laserActive = false
+    updateLaserTipGlow()
+    endTurn()
+    return
+  }
 
   laserActive = true
   clearLaserLayer()
@@ -1226,8 +1238,9 @@ function handleLaserHit(endpoint) {
 
   if (hitPiece.type === 'pharaoh') {
     gameState.gameOver = true
-    // Winner is the OPPOSITE player - whoever shot their own pharaoh loses
-    gameState.winner = gameState.currentPlayer === RED ? SILVER : RED
+    // Determine winner: if destroyed piece is red's pharaoh, silver wins (and vice versa)
+    // Whoever owns the destroyed pharaoh loses
+    gameState.winner = hitPiece.player === RED ? SILVER : RED
     // Overlay will be shown after the laser animation in handleFireLaser
     persistLaserPath()
   }

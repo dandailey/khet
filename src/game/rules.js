@@ -94,7 +94,15 @@ function generateSphinxMoves(state, row, col, piece) {
   const moves = []
   
   // Sphinx can only rotate, not move
-  const rotations = ['N', 'E', 'S', 'W']
+  // Silver can only face N or W (laser facing up or left)
+  // Red can only face S or E (laser facing down or right)
+  let rotations
+  if (piece.player === SILVER) {
+    rotations = ['N', 'W']
+  } else {
+    rotations = ['S', 'E']
+  }
+  
   rotations.forEach(facing => {
     if (facing !== piece.facing) {
       moves.push({

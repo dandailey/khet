@@ -19,3 +19,6 @@ export * from './eval.js'
 export { chooseMove as chooseMoveEasy, shouldFireLaser as shouldFireLaserEasy } from './ai/policy_easy.js'
 export { chooseMove as chooseMoveMedium, shouldFireLaser as shouldFireLaserMedium } from './ai/policy_medium.js'
 export { chooseMove as chooseMoveHard, shouldFireLaser as shouldFireLaserHard } from './ai/policy_hard.js'
+
+// AI tactics utilities
+export * from './ai/tactics/index.js'
