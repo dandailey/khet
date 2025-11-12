@@ -1,6 +1,8 @@
 // Khet - Laser Chess Main Entry Point
 
 import "./style.css"
+import { encodeState, decodeState } from './game/stateCodec.js'
+import QRCode from 'qrcode'
 
 // Direction helpers (clockwise starting at north)
 const DIRECTIONS = {
@@ -106,10 +108,35 @@ let laserLayerElement = null
 let activeLaserTimeout = null
 let listenersAttached = false
 let laserActive = false
+let isLoadingFromHash = false
+
+// Dev mode: enable history-based state management for testing encoding/decoding
+// Set via URL parameter: ?dev=true or localStorage: khet-dev-mode=true
+const DEV_MODE = new URLSearchParams(window.location.search).get('dev') === 'true' || 
+                 localStorage.getItem('khet-dev-mode') === 'true'
+
+// Make DEV_MODE available globally for stateCodec
+if (typeof window !== 'undefined') {
+  window.DEV_MODE = DEV_MODE
+}
 
 // Initialize the game
-function initGame() {
+function initGame(skipHash = false) {
   console.log('Initializing Khet game...')
+  
+  // Check for state in URL hash first (unless skipping hash for reset)
+  if (!skipHash) {
+    const hashState = loadStateFromHash()
+    if (hashState) {
+      gameState = hashState
+      ensureLaserLayer()
+      clearLaserLayer()
+      renderBoard()
+      setupEventListeners()
+      console.log('Game loaded from URL hash!')
+      return
+    }
+  }
   
   // Create empty board (8 rows x 10 columns)
   gameState.board = Array(8)
@@ -127,6 +154,9 @@ function initGame() {
   
   // Set up event listeners
   setupEventListeners()
+  
+  // Update URL hash with initial state
+  updateUrlHash()
   
   console.log('Game initialized!')
 }
@@ -501,6 +531,51 @@ function setupEventListeners() {
     resetGameBtn.addEventListener('click', handleResetGame)
     playAgainBtn.addEventListener('click', handlePlayAgain)
     document.addEventListener('click', handleDocumentClick)
+    
+    // Share menu listeners
+    const shareMenuBtn = document.getElementById('share-menu-btn')
+    const shareMenu = document.getElementById('share-menu')
+    const copyLinkBtn = document.getElementById('copy-link-btn')
+    const shareBtn = document.getElementById('share-btn')
+    const showQrBtn = document.getElementById('show-qr-btn')
+    const pasteLinkBtn = document.getElementById('paste-link-btn')
+    const qrCopyBtn = document.getElementById('qr-copy-btn')
+    const qrCloseBtn = document.getElementById('qr-close-btn')
+    
+    if (shareMenuBtn && shareMenu) {
+      shareMenuBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        toggleShareMenu()
+      })
+    }
+    
+    if (copyLinkBtn) {
+      copyLinkBtn.addEventListener('click', () => {
+        copyGameLink()
+        hideShareMenu()
+      })
+    }
+    if (shareBtn) {
+      shareBtn.addEventListener('click', () => {
+        shareGameLink()
+        hideShareMenu()
+      })
+    }
+    if (showQrBtn) {
+      showQrBtn.addEventListener('click', () => {
+        showQRCode()
+        hideShareMenu()
+      })
+    }
+    if (pasteLinkBtn) {
+      pasteLinkBtn.addEventListener('click', () => {
+        pasteOpponentLink()
+        hideShareMenu()
+      })
+    }
+    if (qrCopyBtn) qrCopyBtn.addEventListener('click', copyGameLink)
+    if (qrCloseBtn) qrCloseBtn.addEventListener('click', hideQRCode)
+    
     listenersAttached = true
   }
 }
@@ -516,6 +591,28 @@ function handleDocumentClick(event) {
   // If clicking outside the board and we have a piece selected, cancel selection
   if (!clickedInsideBoard && gameState.selectedPiece) {
     clearSelection()
+  }
+  
+  // Close share menu if clicking outside it
+  const shareMenu = document.getElementById('share-menu')
+  const shareMenuContainer = document.querySelector('.share-menu-container')
+  if (shareMenu && shareMenuContainer && !shareMenuContainer.contains(event.target)) {
+    hideShareMenu()
+  }
+}
+
+// Share menu functions
+function toggleShareMenu() {
+  const shareMenu = document.getElementById('share-menu')
+  if (shareMenu) {
+    shareMenu.classList.toggle('hidden')
+  }
+}
+
+function hideShareMenu() {
+  const shareMenu = document.getElementById('share-menu')
+  if (shareMenu) {
+    shareMenu.classList.add('hidden')
   }
 }
 
@@ -837,6 +934,7 @@ function endTurn() {
   gameState.actionTaken = true
   gameState.currentPlayer = gameState.currentPlayer === RED ? SILVER : RED
   renderBoard()
+  updateUrlHash()
 }
 
 // Handle laser firing
@@ -1094,6 +1192,7 @@ function handleLaserHit(endpoint) {
     gameState.winner = gameState.currentPlayer === RED ? SILVER : RED
     // Overlay will be shown after the laser animation in handleFireLaser
     persistLaserPath()
+    updateUrlHash()
   }
 }
 
@@ -1259,6 +1358,14 @@ function confirmResetGame() {
   hideResetConfirmationOverlay()
   
   console.log('Resetting game...')
+  
+  // Clear the hash so initGame doesn't reload old state
+  if (DEV_MODE) {
+    window.history.pushState(null, '', window.location.pathname + window.location.search)
+  } else {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  }
+  
   gameState.currentPlayer = SILVER  // Silver always goes first
   gameState.selectedPiece = null
   gameState.selectedSquare = null
@@ -1273,7 +1380,11 @@ function confirmResetGame() {
     activeLaserTimeout = null
   }
 
-  initGame()
+  // Initialize new game, skipping hash check
+  initGame(true)
+  
+  // Update hash with new initial state
+  updateUrlHash()
   updateLaserTipGlow() // Ensure laser tip glow reflects new current player
 }
 
@@ -1305,6 +1416,13 @@ function hideGameOverOverlay() {
 function handlePlayAgain() {
   hideGameOverOverlay()
   
+  // Clear the hash so initGame doesn't reload old state
+  if (DEV_MODE) {
+    window.history.pushState(null, '', window.location.pathname + window.location.search)
+  } else {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  }
+  
   // Reset game state
   gameState.currentPlayer = SILVER  // Silver always goes first
   gameState.selectedPiece = null
@@ -1320,9 +1438,351 @@ function handlePlayAgain() {
     activeLaserTimeout = null
   }
 
-  initGame()
+  // Initialize new game, skipping hash check
+  initGame(true)
+  
+  // Update hash with new initial state
+  updateUrlHash()
   updateLaserTipGlow() // Ensure laser tip glow reflects new current player
 }
 
+// URL Hash Management
+function updateUrlHash() {
+  try {
+    const encoded = encodeState(gameState)
+    const hash = `#v=1.s=${encoded}`
+    
+    if (DEV_MODE && !isLoadingFromHash) {
+      // Dev mode: use pushState to create history entries (allows undo via back button)
+      window.history.pushState({ gameState }, '', hash)
+      console.log('[DEV MODE] State saved to history, hash updated')
+      
+      // Re-render from hash to verify encoding/decoding works
+      setTimeout(() => {
+        isLoadingFromHash = true
+        const hashState = loadStateFromHash()
+        if (hashState) {
+          console.log('[DEV MODE] Re-rendering from hash to verify encoding/decoding')
+          loadGameState(hashState)
+        }
+        isLoadingFromHash = false
+      }, 100)
+    } else {
+      // Normal mode: use replaceState (no history entries)
+      window.history.replaceState(null, '', hash)
+    }
+  } catch (error) {
+    console.error('Failed to update URL hash:', error)
+  }
+}
+
+function loadStateFromHash() {
+  const hash = window.location.hash
+  if (!hash) return null
+
+  try {
+    // Parse hash format: #v=1.s=<base64url>
+    const match = hash.match(/^#v=(\d+)\.s=(.+)$/)
+    if (!match) {
+      console.warn('Invalid hash format')
+      return null
+    }
+
+    const version = parseInt(match[1], 10)
+    const encoded = match[2]
+
+    if (version !== 1) {
+      console.warn(`Unsupported version: ${version}`)
+      return null
+    }
+
+    const decodedState = decodeState(encoded)
+    return decodedState
+  } catch (error) {
+    console.error('Failed to load state from hash:', error)
+    showToast('Invalid game state in URL', 'error')
+    return null
+  }
+}
+
+function loadGameState(state) {
+  // Validate state structure
+  if (!state || !state.board || !Array.isArray(state.board)) {
+    throw new Error('Invalid state structure')
+  }
+
+  if (DEV_MODE) {
+    console.log('[DEV MODE] Loading game state:', {
+      currentPlayer: state.currentPlayer,
+      gameOver: state.gameOver,
+      winner: state.winner,
+      pieceCount: state.board.flat().filter(p => p !== null).length
+    })
+    
+    // Log all scarabs for debugging
+    const scarabs = []
+    for (let row = 0; row < 8; row += 1) {
+      for (let col = 0; col < 10; col += 1) {
+        const piece = state.board[row][col]
+        if (piece && piece.type === 'scarab') {
+          scarabs.push({ row, col, player: piece.player, facing: piece.facing })
+        }
+      }
+    }
+    console.log('[DEV MODE] Scarabs in loaded state:', scarabs)
+  }
+
+  // Set game state
+  gameState.currentPlayer = state.currentPlayer
+  gameState.board = state.board
+  gameState.gameOver = state.gameOver || false
+  gameState.winner = state.winner || null
+  gameState.selectedPiece = null
+  gameState.selectedSquare = null
+  gameState.actionTaken = false
+
+  // Clear UI state
+  clearSelection()
+
+  // Render
+  renderBoard()
+  ensureLaserLayer()
+
+  // Update URL hash to match (but don't create history entry in dev mode if we're loading from hash)
+  if (!DEV_MODE) {
+    updateUrlHash()
+  }
+}
+
+// Share Functions
+function copyGameLink() {
+  const url = window.location.href
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Link copied! Send to opponent', 'success')
+  }).catch(() => {
+    // Fallback: select text in a temporary input
+    const input = document.createElement('input')
+    input.value = url
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    showToast('Link copied! Send to opponent', 'success')
+  })
+}
+
+function shareGameLink() {
+  const url = window.location.href
+  if (navigator.share) {
+    navigator.share({
+      title: 'Khet - Laser Chess',
+      text: 'Continue our game!',
+      url: url
+    }).catch(() => {
+      // User cancelled or share failed, fallback to copy
+      copyGameLink()
+    })
+  } else {
+    copyGameLink()
+  }
+}
+
+function showQRCode() {
+  const url = window.location.href
+  const qrOverlay = document.getElementById('qr-overlay')
+  const qrCanvas = document.getElementById('qr-canvas')
+
+  if (!qrOverlay || !qrCanvas) {
+    console.error('QR overlay elements not found')
+    return
+  }
+
+  // Generate QR code using library
+  generateQRCode(url, qrCanvas).then(() => {
+    qrOverlay.classList.remove('hidden')
+  }).catch(error => {
+    console.error('Failed to generate QR code:', error)
+    showToast('Failed to generate QR code', 'error')
+  })
+}
+
+function hideQRCode() {
+  const qrOverlay = document.getElementById('qr-overlay')
+  if (qrOverlay) {
+    qrOverlay.classList.add('hidden')
+  }
+}
+
+async function generateQRCode(text, canvas) {
+  try {
+    await QRCode.toCanvas(canvas, text, {
+      width: 200,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#ffffff'
+      }
+    })
+  } catch (error) {
+    console.error('Failed to generate QR code:', error)
+    // Fallback: show error message on canvas
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, 200, 200)
+    ctx.fillStyle = '#000000'
+    ctx.font = '12px monospace'
+    ctx.textAlign = 'center'
+    ctx.fillText('QR Code Error', 100, 90)
+    ctx.fillText('Use Copy Link instead', 100, 110)
+  }
+}
+
+function pasteOpponentLink() {
+  navigator.clipboard.readText().then(text => {
+    // Extract hash from pasted URL
+    let hash = text
+    if (text.includes('#')) {
+      hash = text.substring(text.indexOf('#'))
+    } else if (text.startsWith('#')) {
+      hash = text
+    } else {
+      showToast('Invalid link format', 'error')
+      return
+    }
+
+    // Try to load state from hash
+    try {
+      const match = hash.match(/^#v=(\d+)\.s=(.+)$/)
+      if (!match) {
+        showToast('Invalid game state format', 'error')
+        return
+      }
+
+      const version = parseInt(match[1], 10)
+      const encoded = match[2]
+
+      if (version !== 1) {
+        showToast(`Unsupported version: ${version}`, 'error')
+        return
+      }
+
+      const decodedState = decodeState(encoded)
+      loadGameState(decodedState)
+      showToast('Game state loaded', 'success')
+    } catch (error) {
+      console.error('Failed to load state:', error)
+      showToast('Failed to load game state', 'error')
+    }
+  }).catch(() => {
+    // Permission denied or clipboard empty, show input field
+    showPasteInput()
+  })
+}
+
+function showPasteInput() {
+  const input = prompt('Paste the opponent\'s game link:')
+  if (!input) return
+
+  let hash = input
+  if (input.includes('#')) {
+    hash = input.substring(input.indexOf('#'))
+  } else if (input.startsWith('#')) {
+    hash = input
+  } else {
+    showToast('Invalid link format', 'error')
+    return
+  }
+
+  try {
+    const match = hash.match(/^#v=(\d+)\.s=(.+)$/)
+    if (!match) {
+      showToast('Invalid game state format', 'error')
+      return
+    }
+
+    const version = parseInt(match[1], 10)
+    const encoded = match[2]
+
+    if (version !== 1) {
+      showToast(`Unsupported version: ${version}`, 'error')
+      return
+    }
+
+    const decodedState = decodeState(encoded)
+    loadGameState(decodedState)
+    showToast('Game state loaded', 'success')
+  } catch (error) {
+    console.error('Failed to load state:', error)
+    showToast('Failed to load game state', 'error')
+  }
+}
+
+function showToast(message, type = 'info') {
+  // Remove existing toast if any
+  const existingToast = document.querySelector('.toast')
+  if (existingToast) {
+    existingToast.remove()
+  }
+
+  const toast = document.createElement('div')
+  toast.className = `toast toast-${type}`
+  toast.textContent = message
+  document.body.appendChild(toast)
+
+  // Trigger animation
+  setTimeout(() => {
+    toast.classList.add('show')
+  }, 10)
+
+  // Remove after delay
+  setTimeout(() => {
+    toast.classList.remove('show')
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.remove()
+      }
+    }, 300)
+  }, 3000)
+}
+
+// Handle browser back/forward in dev mode
+if (DEV_MODE) {
+  window.addEventListener('popstate', (event) => {
+    console.log('[DEV MODE] History navigation detected')
+    const hashState = loadStateFromHash()
+    if (hashState) {
+      loadGameState(hashState)
+    } else {
+      // If no hash, initialize new game
+      initGame()
+    }
+  })
+}
+
+// Handle hash changes (when URL is pasted/changed in address bar)
+window.addEventListener('hashchange', () => {
+  console.log('Hash changed, reloading state from URL')
+  const hashState = loadStateFromHash()
+  if (hashState) {
+    loadGameState(hashState)
+  } else if (!window.location.hash) {
+    // Hash was removed, initialize new game
+    initGame()
+  }
+})
+
 // Start the game when DOM is loaded
-document.addEventListener('DOMContentLoaded', initGame)
+document.addEventListener('DOMContentLoaded', () => {
+  if (DEV_MODE) {
+    console.log('[DEV MODE] Enabled - History entries will be created on each move')
+    console.log('[DEV MODE] Use browser back/forward to undo/redo moves')
+    console.log('[DEV MODE] Board will re-render from URL hash after each move to verify encoding')
+    
+    // Add visual indicator
+    const indicator = document.createElement('div')
+    indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #ff6b6b; color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; z-index: 9999; box-shadow: 0 2px 8px rgba(0,0,0,0.3);'
+    indicator.textContent = 'DEV MODE'
+    document.body.appendChild(indicator)
+  }
+  initGame()
+})
