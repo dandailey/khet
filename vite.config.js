@@ -1,19 +1,18 @@
 import { defineConfig } from 'vite'
+import { viteSingleFile } from 'vite-plugin-singlefile'
 
 export default defineConfig({
+  plugins: [viteSingleFile()],
   build: {
+    outDir: 'dist',
+    cssCodeSplit: false,
+    minify: 'terser',
     rollupOptions: {
       output: {
-        entryFileNames: 'assets/[name].js',
-        chunkFileNames: 'assets/[name].js',
-        assetFileNames: 'assets/[name].[ext]'
+        inlineDynamicImports: true,
+        manualChunks: undefined
       }
-    },
-    // Generate a single HTML file with inline CSS and JS
-    outDir: 'dist',
-    assetsInlineLimit: 100000000, // Inline everything
-    cssCodeSplit: false,
-    minify: 'terser'
+    }
   },
   server: {
     port: 3000,
