@@ -58,11 +58,10 @@ const PYRAMID_MIRROR_ENTRIES = {
 }
 
 const MAX_LASER_STEPS = 100
-const LASER_THICKNESS = 6
+const LASER_THICKNESS_PERCENT = 8.57 // Percentage of square size (6/70 * 100)
 const LASER_DURATION = 1500
 const BOARD_ROWS = 8
 const BOARD_COLS = 10
-const SQUARE_SIZE = 70
 
 const RED = 1
 const SILVER = 2
@@ -109,6 +108,7 @@ let activeLaserTimeout = null
 let listenersAttached = false
 let laserActive = false
 let isLoadingFromHash = false
+let boardResizeObserver = null
 
 // Dev mode: enable history-based state management for testing encoding/decoding
 // Set via URL parameter: ?dev=true or localStorage: khet-dev-mode=true
@@ -132,6 +132,7 @@ function initGame(skipHash = false) {
       ensureLaserLayer()
       clearLaserLayer()
       renderBoard()
+      setupBoardResizeObserver()
       setupEventListeners()
       console.log('Game loaded from URL hash!')
       return
@@ -151,6 +152,7 @@ function initGame(skipHash = false) {
 
   // Render the board
   renderBoard()
+  setupBoardResizeObserver()
   
   // Set up event listeners
   setupEventListeners()
@@ -265,6 +267,7 @@ function renderBoard() {
     }
   }
   
+  updateBoardDimensions()
   // Add laser tip glow for current player's sphinx
   addLaserTipGlow()
 }
@@ -289,16 +292,31 @@ function addLaserTipGlow() {
   if (!squareCenter) return
   
   // Calculate laser tip position based on facing direction
-  const tipOffset = 20 // Distance from center to tip (matches sphinx SVG tip position)
+  // SVG size is 60px, center is 30px, tip is at center - 20 = 10px from top when facing North
+  // Piece is 82% of square, so actual rendered size is 0.82 * squareSize
+  // SVG scales to fit: 20px in SVG (60px viewBox) = 20/60 * 0.82 * squareSize
+  // For 70px square: 20/60 * 0.82 * 70 = ~19.13px, but we'll use the ratio directly
+  const squareWidthPercent = 100 / BOARD_COLS
+  const squareHeightPercent = 100 / BOARD_ROWS
+  // Tip offset accounts for SVG scaling: 20px in 60px SVG, scaled by 0.82 piece size
+  const tipOffsetRatio = (20 / 60) * 0.82 // Ratio of square size
+  const tipOffsetPercentX = tipOffsetRatio * squareWidthPercent
+  const tipOffsetPercentY = tipOffsetRatio * squareHeightPercent
   const directionVector = CARDINAL_VECTORS[facing]
-  const tipX = squareCenter.x + directionVector.col * tipOffset
-  const tipY = squareCenter.y + directionVector.row * tipOffset
+  const tipXPercent = squareCenter.x + directionVector.col * tipOffsetPercentX
+  const tipYPercent = squareCenter.y + directionVector.row * tipOffsetPercentY
   
   // Create glow element
   const glowElement = document.createElement('div')
   glowElement.className = 'laser-tip-glow'
-  glowElement.style.left = `${tipX - 22}px` // Center the 40px glow, offset 2px left
-  glowElement.style.top = `${tipY - 20}px`
+  // Glow is 40px originally = 57.14% of 70px square
+  // Convert to percentage of board dimensions
+  const glowWidthPercent = (40 / 70) * squareWidthPercent
+  const glowHeightPercent = (40 / 70) * squareHeightPercent
+  glowElement.style.width = `${glowWidthPercent}%`
+  glowElement.style.height = `${glowHeightPercent}%`
+  glowElement.style.left = `${tipXPercent - (glowWidthPercent / 2)}%`
+  glowElement.style.top = `${tipYPercent - (glowHeightPercent / 2)}%`
   
   // Add to board
   boardElement.appendChild(glowElement)
@@ -606,6 +624,7 @@ function toggleShareMenu() {
   const shareMenu = document.getElementById('share-menu')
   if (shareMenu) {
     shareMenu.classList.toggle('hidden')
+    updateBoardDimensions()
   }
 }
 
@@ -613,6 +632,7 @@ function hideShareMenu() {
   const shareMenu = document.getElementById('share-menu')
   if (shareMenu) {
     shareMenu.classList.add('hidden')
+    updateBoardDimensions()
   }
 }
 
@@ -1110,8 +1130,12 @@ function renderLaserPath(path) {
   if (!boardElement) return
 
   const boardRect = boardElement.getBoundingClientRect()
-  const squareWidth = boardRect.width / BOARD_COLS
-  const squareHeight = boardRect.height / BOARD_ROWS
+  const squareWidthPercent = 100 / BOARD_COLS
+  const squareHeightPercent = 100 / BOARD_ROWS
+  // Laser thickness as percentage of square size (6px / 70px = 8.57% of square)
+  // Convert to percentage of board: 8.57% of square = 8.57% * (100/BOARD_ROWS) of board height
+  const laserThicknessPercentHeight = (LASER_THICKNESS_PERCENT / 100) * squareHeightPercent
+  const laserThicknessPercentWidth = (LASER_THICKNESS_PERCENT / 100) * squareWidthPercent
 
   path.forEach(segment => {
     const startCenter = getSquareCenter(segment.startRow, segment.startCol, boardRect)
@@ -1119,9 +1143,10 @@ function renderLaserPath(path) {
 
     let endCenter = null
     if (segment.outOfBounds) {
+      // Calculate end position as percentage
       endCenter = {
-        x: startCenter.x + CARDINAL_VECTORS[segment.direction].col * (squareWidth / 2),
-        y: startCenter.y + CARDINAL_VECTORS[segment.direction].row * (squareHeight / 2)
+        x: startCenter.x + CARDINAL_VECTORS[segment.direction].col * (squareWidthPercent / 2),
+        y: startCenter.y + CARDINAL_VECTORS[segment.direction].row * (squareHeightPercent / 2)
       }
     } else {
       endCenter = getSquareCenter(segment.endRow, segment.endCol, boardRect)
@@ -1136,17 +1161,17 @@ function renderLaserPath(path) {
     const deltaY = endCenter.y - startCenter.y
 
     if (Math.abs(deltaX) >= Math.abs(deltaY)) {
-      const length = Math.abs(deltaX)
-      laserSegment.style.width = `${length}px`
-      laserSegment.style.height = `${LASER_THICKNESS}px`
-      laserSegment.style.left = `${Math.min(startCenter.x, endCenter.x)}px`
-      laserSegment.style.top = `${startCenter.y - LASER_THICKNESS / 2}px`
+      const lengthPercent = Math.abs(deltaX)
+      laserSegment.style.width = `${lengthPercent}%`
+      laserSegment.style.height = `${laserThicknessPercentHeight}%`
+      laserSegment.style.left = `${Math.min(startCenter.x, endCenter.x)}%`
+      laserSegment.style.top = `${startCenter.y - (laserThicknessPercentHeight / 2)}%`
     } else {
-      const length = Math.abs(deltaY)
-      laserSegment.style.width = `${LASER_THICKNESS}px`
-      laserSegment.style.height = `${length}px`
-      laserSegment.style.left = `${startCenter.x - LASER_THICKNESS / 2}px`
-      laserSegment.style.top = `${Math.min(startCenter.y, endCenter.y)}px`
+      const lengthPercent = Math.abs(deltaY)
+      laserSegment.style.width = `${laserThicknessPercentWidth}%`
+      laserSegment.style.height = `${lengthPercent}%`
+      laserSegment.style.left = `${startCenter.x - (laserThicknessPercentWidth / 2)}%`
+      laserSegment.style.top = `${Math.min(startCenter.y, endCenter.y)}%`
     }
 
     laserLayerElement.appendChild(laserSegment)
@@ -1155,8 +1180,14 @@ function renderLaserPath(path) {
     if (segment.hit || segment.absorbed) {
       const hitIndicator = document.createElement('div')
       hitIndicator.className = 'laser-impact'
-      hitIndicator.style.left = `${endCenter.x - LASER_THICKNESS * 1.5}px`
-      hitIndicator.style.top = `${endCenter.y - LASER_THICKNESS * 1.5}px`
+      // Impact indicator is 18px originally = 25.7% of 70px square
+      // Convert to percentage of board
+      const impactSizePercentWidth = (25.7 / 100) * squareWidthPercent
+      const impactSizePercentHeight = (25.7 / 100) * squareHeightPercent
+      hitIndicator.style.width = `${impactSizePercentWidth}%`
+      hitIndicator.style.height = `${impactSizePercentHeight}%`
+      hitIndicator.style.left = `${endCenter.x - (impactSizePercentWidth / 2)}%`
+      hitIndicator.style.top = `${endCenter.y - (impactSizePercentHeight / 2)}%`
       laserLayerElement.appendChild(hitIndicator)
     }
   })
@@ -1202,24 +1233,27 @@ function addDestructionAnimation(row, col) {
   if (!boardElement) return
   
   const boardRect = boardElement.getBoundingClientRect()
-  const squareWidth = boardRect.width / BOARD_COLS
-  const squareHeight = boardRect.height / BOARD_ROWS
+  const squareWidthPercent = 100 / BOARD_COLS
+  const squareHeightPercent = 100 / BOARD_ROWS
   
   // Get the center of the square where the piece was destroyed
   const squareCenter = getSquareCenter(row, col, boardRect)
   if (!squareCenter) return
   
-  // Create the pink glow effect
+  // Create the pink glow effect (100% of square size in CSS, centered)
   const glowElement = document.createElement('div')
   glowElement.className = 'destruction-glow'
-  glowElement.style.left = `${squareCenter.x - 35}px` // Center the 70px glow
-  glowElement.style.top = `${squareCenter.y - 35}px`
+  // Center the glow (50% of square width/height)
+  glowElement.style.left = `${squareCenter.x - (squareWidthPercent / 2)}%`
+  glowElement.style.top = `${squareCenter.y - (squareHeightPercent / 2)}%`
+  glowElement.style.width = `${squareWidthPercent}%`
+  glowElement.style.height = `${squareHeightPercent}%`
   
   // Create particle container
   const particleContainer = document.createElement('div')
   particleContainer.className = 'particle-container'
-  particleContainer.style.left = `${squareCenter.x}px`
-  particleContainer.style.top = `${squareCenter.y}px`
+  particleContainer.style.left = `${squareCenter.x}%`
+  particleContainer.style.top = `${squareCenter.y}%`
   
   // Create multiple particles flying in random directions
   const particleCount = 12
@@ -1228,15 +1262,18 @@ function addDestructionAnimation(row, col) {
     particle.className = 'destruction-particle'
     
     // Random direction and distance
+    // Distance: 25-40px originally = 35.7-57.1% of 70px square
+    // Use percentage of square size
     const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5
-    const distance = 25 + Math.random() * 15 // 25-40px distance
+    const distancePercent = (35.7 + Math.random() * 21.4) / 100 // 35.7-57.1% of square
     const duration = 800 + Math.random() * 400 // 800-1200ms duration
     
-    const endX = Math.cos(angle) * distance
-    const endY = Math.sin(angle) * distance
+    // Calculate end position as percentage of board dimensions
+    const endXPercent = Math.cos(angle) * distancePercent * squareWidthPercent
+    const endYPercent = Math.sin(angle) * distancePercent * squareHeightPercent
     
-    particle.style.setProperty('--end-x', `${endX}px`)
-    particle.style.setProperty('--end-y', `${endY}px`)
+    particle.style.setProperty('--end-x', `${endXPercent}%`)
+    particle.style.setProperty('--end-y', `${endYPercent}%`)
     particle.style.setProperty('--duration', `${duration}ms`)
     
     particleContainer.appendChild(particle)
@@ -1275,14 +1312,91 @@ function clearLaserLayer() {
   }
 }
 
+function updateBoardDimensions() {
+  const boardElement = document.getElementById('game-board')
+  const appElement = document.getElementById('app')
+  const mainElement = boardElement?.parentElement
+  if (!boardElement || !mainElement || !appElement) return
+
+  // Get header and controls heights (they're flex-shrink: 0, so they have fixed heights)
+  const headerElement = appElement.querySelector('header')
+  const controlsElement = mainElement.querySelector('.controls')
+  const mainStyles = window.getComputedStyle(mainElement)
+  const appStyles = window.getComputedStyle(appElement)
+  
+  const gap = parseFloat(mainStyles.rowGap || mainStyles.gap || '0')
+  const appPadding = parseFloat(appStyles.paddingTop || '0') + parseFloat(appStyles.paddingBottom || '0')
+  const headerHeight = headerElement ? headerElement.offsetHeight + parseFloat(window.getComputedStyle(headerElement).marginBottom || '0') : 0
+  const controlsHeight = controlsElement ? controlsElement.offsetHeight : 0
+
+  // Calculate available space from viewport, not from main element (which is constrained by board)
+  const viewportHeight = window.innerHeight
+  const viewportWidth = window.innerWidth
+  
+  // Get body padding (it's 1em on all sides)
+  const bodyStyles = window.getComputedStyle(document.body)
+  const bodyPaddingTop = parseFloat(bodyStyles.paddingTop || '0')
+  const bodyPaddingBottom = parseFloat(bodyStyles.paddingBottom || '0')
+  const bodyPaddingLeft = parseFloat(bodyStyles.paddingLeft || '0')
+  const bodyPaddingRight = parseFloat(bodyStyles.paddingRight || '0')
+  
+  // Available height = viewport - body padding - app padding - header - controls - gap
+  const availableHeight = Math.max(viewportHeight - bodyPaddingTop - bodyPaddingBottom - appPadding - headerHeight - controlsHeight - gap, 0)
+  // Available width = viewport - body padding - app padding
+  const availableWidth = Math.max(viewportWidth - bodyPaddingLeft - bodyPaddingRight - appPadding, 0)
+
+  if (availableWidth <= 0 || availableHeight <= 0) {
+    boardElement.style.width = ''
+    boardElement.style.height = ''
+    return
+  }
+
+  const aspectRatio = BOARD_COLS / BOARD_ROWS
+  let targetWidth = availableWidth
+  let targetHeight = targetWidth / aspectRatio
+
+  if (targetHeight > availableHeight) {
+    targetHeight = availableHeight
+    targetWidth = targetHeight * aspectRatio
+  }
+
+  boardElement.style.width = `${targetWidth}px`
+  boardElement.style.height = `${targetHeight}px`
+}
+
+function setupBoardResizeObserver() {
+  const appElement = document.getElementById('app')
+  if (!appElement) return
+
+  if (boardResizeObserver) {
+    boardResizeObserver.disconnect()
+  }
+
+  // Observe the app element and window resize to catch all size changes
+  boardResizeObserver = new ResizeObserver(() => {
+    updateBoardDimensions()
+  })
+
+  boardResizeObserver.observe(appElement)
+  
+  // Also listen to window resize for viewport changes
+  window.removeEventListener('resize', updateBoardDimensions)
+  window.addEventListener('resize', updateBoardDimensions)
+}
+
 function getSquareCenter(row, col, boardRect) {
   const square = document.querySelector(`[data-row="${row}"][data-col="${col}"]`)
   if (!square) return null
 
   const squareRect = square.getBoundingClientRect()
+  // Return percentages relative to board dimensions
+  const xPercent = ((squareRect.left - boardRect.left + (boardRect.width / BOARD_COLS) / 2) / boardRect.width) * 100
+  const yPercent = ((squareRect.top - boardRect.top + (boardRect.height / BOARD_ROWS) / 2) / boardRect.height) * 100
   return {
-    x: squareRect.left - boardRect.left + (boardRect.width / BOARD_COLS) / 2,
-    y: squareRect.top - boardRect.top + (boardRect.height / BOARD_ROWS) / 2
+    x: xPercent,
+    y: yPercent,
+    xPx: squareRect.left - boardRect.left + (boardRect.width / BOARD_COLS) / 2,
+    yPx: squareRect.top - boardRect.top + (boardRect.height / BOARD_ROWS) / 2
   }
 }
 
@@ -1322,7 +1436,7 @@ function showResetConfirmationOverlay() {
   const cancelBtn = document.createElement('button')
   cancelBtn.textContent = 'Nevermind'
   cancelBtn.className = 'btn btn-secondary'
-  cancelBtn.style.marginRight = '10px'
+  cancelBtn.style.marginRight = '0.625em'
   cancelBtn.onclick = hideResetConfirmationOverlay
   
   // Update play again button to be reset button (right side)
@@ -1615,8 +1729,12 @@ function hideQRCode() {
 
 async function generateQRCode(text, canvas) {
   try {
+    // Calculate QR code size relative to viewport (min of width/height, capped)
+    const maxSize = Math.min(window.innerWidth, window.innerHeight) * 0.3
+    const qrSize = Math.min(maxSize, 200)
+    
     await QRCode.toCanvas(canvas, text, {
-      width: 200,
+      width: qrSize,
       margin: 2,
       color: {
         dark: '#000000',
@@ -1627,13 +1745,14 @@ async function generateQRCode(text, canvas) {
     console.error('Failed to generate QR code:', error)
     // Fallback: show error message on canvas
     const ctx = canvas.getContext('2d')
+    const canvasSize = Math.min(window.innerWidth, window.innerHeight) * 0.3
     ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, 200, 200)
+    ctx.fillRect(0, 0, canvasSize, canvasSize)
     ctx.fillStyle = '#000000'
-    ctx.font = '12px monospace'
+    ctx.font = `${canvasSize * 0.06}px monospace`
     ctx.textAlign = 'center'
-    ctx.fillText('QR Code Error', 100, 90)
-    ctx.fillText('Use Copy Link instead', 100, 110)
+    ctx.fillText('QR Code Error', canvasSize / 2, canvasSize * 0.45)
+    ctx.fillText('Use Copy Link instead', canvasSize / 2, canvasSize * 0.55)
   }
 }
 
@@ -1780,9 +1899,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Add visual indicator
     const indicator = document.createElement('div')
-    indicator.style.cssText = 'position: fixed; top: 10px; right: 10px; background: #ff6b6b; color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; z-index: 9999; box-shadow: 0 2px 8px rgba(0,0,0,0.3);'
+    indicator.style.cssText = 'position: fixed; top: 0.625em; right: 0.625em; background: #ff6b6b; color: white; padding: 0.5em 0.75em; border-radius: 0.25em; font-size: 0.75em; font-weight: bold; z-index: 9999; box-shadow: 0 0.125em 0.5em rgba(0,0,0,0.3);'
     indicator.textContent = 'DEV MODE'
     document.body.appendChild(indicator)
   }
   initGame()
+  window.addEventListener('resize', updateBoardDimensions)
 })
