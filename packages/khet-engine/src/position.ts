@@ -14,6 +14,8 @@ export class Position {
   ply = 0;
   private readonly sphinx = new Int16Array(2).fill(-1);
   private readonly moves = new Int32Array(MAX_MOVES);
+  private readonly beamMoves = new Int32Array(MAX_MOVES);
+  private readonly beamMask = new Uint8Array(80);
   private undo: Int32Array;
   private historyLo: Uint32Array;
   private historyHi: Uint32Array;
@@ -97,6 +99,59 @@ export class Position {
     if (out instanceof Int32Array && count > out.length) throw new Error('Move buffer too small');
     return count;
   }
+
+  /** Generate for either color without touching hashes or repetition history. */
+  generateMovesFor(color: Color, out: Int32Array | number[]): number {
+    if (color !== SILVER && color !== RED) throw new Error('Invalid mover color');
+    const side = this.side;
+    try { this.side = color; return this.generateMoves(out); }
+    finally { this.side = side; }
+  }
+
+  generateBeamMoves(color: Color, out: Int32Array | number[] = this.moves): number {
+    const count = this.generateMovesFor(color, this.beamMoves);
+    this.beamMask.fill(0);
+    for (const sq of this.traceLaser(color).path) this.beamMask[sq] = 1;
+    let n = 0;
+    for (let i = 0; i < count; i++) {
+      const move = this.beamMoves[i];
+      if (this.beamMask[move & 127] || this.beamMask[(move >>> 7) & 127]) out[n++] = move;
+    }
+    if (out instanceof Int32Array && n > out.length) throw new Error('Move buffer too small');
+    return n;
+  }
+
+  /** Fast action + shot preview for a generated move. -1 means no destruction;
+   * otherwise low 7 bits are the hit square and upper bits the packed victim.
+   * Restores the board even if tracing throws; does not fire or advance history. */
+  previewShot(move: number, color: Color = this.side): number {
+    const from = move & 127, to = (move >>> 7) & 127, kind = move >>> 14;
+    const p = this.board[from], target = this.board[to];
+    try {
+      if (kind === STEP || kind === SWAP) {
+        this.board[from] = kind === SWAP ? target : 0; this.board[to] = p;
+      } else this.board[from] = (p & 15) | (this.rotated(p, from, kind) << 4);
+      const hit = traceLaserFast(this.board, this.sphinx[color]);
+      return hit < 0 ? -1 : hit | (this.board[hit] << 7);
+    } finally { this.board[from] = p; this.board[to] = target; }
+  }
+
+  /** Include unchanged shots when the base shot already destroys an enemy. */
+  generateTacticalMoves(color: Color, out: Int32Array | number[]): number {
+    const hit = traceLaserFast(this.board, this.sphinx[color]);
+    return hit >= 0 && pieceColor(this.board[hit]) !== color
+      ? this.generateMovesFor(color, out) : this.generateBeamMoves(color, out);
+  }
+
+  findWinInOne(color: Color): number {
+    const count = this.generateTacticalMoves(color, this.moves);
+    for (let i = 0; i < count; i++) {
+      const shot = this.previewShot(this.moves[i], color), victim = shot >>> 7;
+      if (shot >= 0 && pieceType(victim) === PHARAOH && pieceColor(victim) !== color) return this.moves[i];
+    }
+    return -1;
+  }
+  hasWinInOne(color: Color): boolean { return this.findWinInOne(color) >= 0; }
 
   private isLegal(move: number): boolean {
     if (!Number.isInteger(move) || move < 0 || move > 65535 || this.result !== null) return false;

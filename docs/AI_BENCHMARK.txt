@@ -1,0 +1,64 @@
+name	limit	nodes	nps	depth	ms	move
+classic-start	depth4	35548	14034	4	2533.0	c4-b5
+classic-start	1000ms	16384	15841	3	1034.3	d1-e2
+classic-4ply	depth4	60759	28557	4	2127.7	d6-
+classic-4ply	1000ms	24576	24185	3	1016.2	d6-c6
+classic-8ply	depth4	54180	28687	4	1888.7	j4-j3
+classic-8ply	1000ms	26624	25511	3	1043.6	j4-j3
+classic-12ply	depth4	121950	24911	4	4895.4	f1-e2
+classic-12ply	1000ms	30720	30474	3	1008.1	f1-e2
+classic-16ply	depth4	222353	40756	4	5455.7	j7-
+classic-16ply	1000ms	25600	25426	3	1006.9	j7-
+classic-20ply	depth4	41214	22049	4	1869.2	h2-h1
+classic-20ply	1000ms	19456	18489	3	1052.3	j4-j3
+classic-24ply	depth4	43972	26360	4	1668.1	d4-e3
+classic-24ply	1000ms	24576	24089	3	1020.2	e4xd5
+classic-28ply	depth4	46857	21993	4	2130.5	i4-j5
+classic-28ply	1000ms	18432	18283	3	1008.1	i4-j5
+classic-32ply	depth4	66090	25458	4	2596.0	j4-j3
+classic-32ply	1000ms	17408	16846	3	1033.4	j4-j3
+classic-36ply	depth4	424024	56688	4	7480.0	i6-
+classic-36ply	1000ms	52224	51917	2	1005.9	i6-
+classic-40ply	depth4	27698	21792	4	1271.0	i2-j3
+classic-40ply	1000ms	16384	16290	3	1005.8	d1-e2
+classic-44ply	depth4	130732	43267	4	3021.5	h2-h1
+classic-44ply	1000ms	33792	33426	3	1011.0	h2-h1
+classic-48ply	depth4	26569	26377	4	1007.3	i4-j3
+classic-48ply	1000ms	25600	25184	3	1016.5	i4-j3
+classic-52ply	depth4	360776	59135	4	6100.9	j4+
+classic-52ply	1000ms	59392	58399	3	1017.0	f4-e3
+classic-56ply	depth4	34502	21643	4	1594.2	h2-g1
+classic-56ply	1000ms	22528	22453	3	1003.3	h2-g1
+classic-60ply	depth4	70172	33226	4	2112.0	i3-j3
+classic-60ply	1000ms	36864	36162	3	1019.4	i3-j3
+classic-64ply	depth4	26625	33234	4	801.1	h3-i3
+classic-64ply	1000ms	22528	21837	3	1031.7	d2-d3
+classic-68ply	depth4	20458	22588	4	905.7	d3-e2
+classic-68ply	1000ms	23552	22727	4	1036.3	d3-e2
+classic-72ply	depth4	73003	45862	4	1591.8	c6-d5
+classic-72ply	1000ms	41984	41517	3	1011.2	d4-c3
+classic-76ply	depth4	507331	101016	4	5022.3	h7-
+classic-76ply	1000ms	44032	43158	3	1020.2	h5-g4
+TOTAL depth4: 2394813 nodes; 42710 NPS; 56072.0 ms; depth mean 4.00 range 4-4
+TOTAL 1000ms: 582656 nodes; 28560 NPS; 20401.4 ms; depth mean 3.00 range 2-4
+Position manifest (KFEN):
+classic-start	ss3asf-asp22/2p37/3P46/p11P31c\c/1p21P4/p21P41C/C\1p11P3/6p23/7P12/2P4AnF-An3Sn s 0
+classic-4ply	ss2as1f-asp22/2p37/3P46/p11P31c\c/1p21P4/3P4C/C\1p11P3/1p24p23/7P12/2P4AeF-An3Sn s 4
+classic-8ply	ss3asf-aep22/2p37/4c\c/3P4/p19/p2P41P3C/C\1p11P3/6p13/7P12/2P4AnF-An3Sn s 8
+classic-12ply	ss4f-as3/2p31P33p21/4as5/p11P31c\c/1p31P4/4C/C\3P3/p25p23/1P45P12/3AnF-An3Sn s 12
+classic-16ply	ss3asf-asp22/2p36P4/3P32c/3/p18P3/p21c\1C\2p12/2P42C/p33/7P12/2P4AnF-An3Sn s 16
+classic-20ply	ss1p22f-asp22/10/4c\1as3/p11P31P41p1p21P1/1p23C\1c/1P2/2P42p2C/3/3P4An2P12/4F-An3Sn s 20
+classic-24ply	ss3awf-2p21/5as4/1p26p11/p12P4c\C\4/3P4C/p2c/p12/1p24P43/2P15P31/3AnF-An3Sn s 24
+classic-28ply	ss4f-asp32/2p3as3c\2/3P46/3P3c\1p43/2P41C/2p1P31/5p2C\3/4AnAeP13/2P11F-4Sn s 28
+classic-32ply	ss3as3p31/5ae1f-2/2P41c/2p32/p11P31c\C\3P4/7p11P3/2P41C/5/1p23F-1p22/1P41Aw1AnP12Sn s 32
+classic-36ply	seP38/3p36/3c\f-1as1P41/2P32c/p43/2P4C/C\p22P31/p19/2P43AnP12/3AnF-4Sn s 36
+classic-40ply	ss3f-1asp22/3P36/1p32as1c/3/p11P41c\3p41/5C/1p12/1p21C\2p21P11/2P45P21/3AnF-An3Sn s 40
+classic-44ply	ss5aep22/6f-3/2c\p3C\5/1P32asp24/p12P41p1c/1p11/1p23C/2P21/5F-1P12/9Sw s 44
+classic-48ply	ss3f-2p22/6as3/1P13C/1p12/5c\c/1P31/5C/1p2P31/5p34/2P21An5/3F-2Ae2Sn s 48
+classic-52ply	ss4as1f-2/2as2p14/5P43P4/p1C/P32c/p2p12/5C\2p2P2/1P1Aw2c/4/2P21F-2P12/5An3Sn s 52
+classic-56ply	ss3c/3p21/2P41p3f-ae3/1p15as2/1p21P41c\2p1P3/3P31C/4/3Ae1C\1p32/2P41AnF-1P12/9Sw s 56
+classic-60ply	ss1aw1P2f-4/5aw4/1P3p33c/1p31/2P44C\2/4p1c/1p12/1P22C\2p1P31/3An6/3F-1AnP12Sn s 60
+classic-64ply	se4f-4/2p4p4p1ae4/3P41c\2p11/2P42c/1p22/1P44C/3/4P2Awp3P32/3F-C/An4/9Sn s 64
+classic-68ply	ss1p22f-p21as1/3aw6/10/1P41c/C\1P23/2p41p4C/2c/1/3Aw2P31p21/1P13F-p2P32/5Aw3Sn s 68
+classic-72ply	se9/2p21c/1ae3/1P2P4f-1as4/2p12P31p12/3F-c/C/p33/4Awp2C/3/2An7/2P23P22Sn s 72
+classic-76ply	ss5f-p32/4ae2P42/4c\5/1p1P4P4c/1p1C\2/2P34p22/10/3C/1AnAnp22/5F-P42Sn s 76
