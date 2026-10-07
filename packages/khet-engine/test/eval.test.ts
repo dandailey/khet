@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PARAMS, EvalParams, PARAM_NAMES, PHARAOH, PYRAMID, RED, SCARAB, SILVER, SPHINX, applyMove, evaluate, evaluationFeatures, fromPieces } from '../src/index.ts';
+import { ANUBIS, DEFAULT_PARAMS, EvalParams, MAX_MOVES, PARAM_NAMES, PHARAOH, PYRAMID, RED, SCARAB, SILVER, SPHINX, applyMove, evaluate, evaluationFeatures, fromPieces } from '../src/index.ts';
+import { pieceColor, pieceType } from '../src/types.ts';
 import type { Color } from '../src/index.ts';
 import { piece as p, randomPositions } from './ai-fixtures.ts';
 
@@ -17,6 +18,48 @@ test('Hanging pieces retain their identity across enemy Scarab swaps', () => {
     p(79, SPHINX, SILVER), p(74, PHARAOH, SILVER), p(5, PHARAOH, RED),
   ], SILVER);
   assert.equal(evaluationFeatures(pos)[8], 1);
+});
+test('Hanging features match exhaustive shots, including unchanged base shots', () => {
+  const moves = new Int32Array(MAX_MOVES);
+  for (const pos of randomPositions(150, 0x987abc)) {
+    const expected = [0, 0, 0];
+    for (const color of [SILVER, RED] as const) {
+      const enemy = (color ^ 1) as Color, sign = color === pos.side ? 1 : -1;
+      const victims = new Set<number>(), count = pos.generateMovesFor(enemy, moves);
+      for (let i = 0; i < count; i++) {
+        const move = moves[i], shot = pos.previewShot(move, enemy);
+        if (shot < 0 || pieceColor(shot >>> 7) !== color) continue;
+        const hit = shot & 127;
+        const identity = (move >>> 14) === 1 && hit === (move & 127) ? (move >>> 7) & 127 : hit;
+        if (victims.has(identity)) continue;
+        victims.add(identity);
+        const type = pieceType(shot >>> 7);
+        if (type === PYRAMID) expected[0] += sign;
+        if (type === ANUBIS) expected[1] += sign;
+        if (type === PHARAOH) expected[2] += sign;
+      }
+    }
+    assert.deepEqual(Array.from(evaluationFeatures(pos).subarray(8, 11)), expected);
+    const collected = [0, 0, 0], mask = new Uint8Array(80), victims = new Uint8Array(80);
+    let complete = true;
+    for (const attacker of [SILVER, RED] as const) {
+      const base = pos.shotOnPath(attacker, mask);
+      if (pos.findWinInOne(attacker, mask, base, victims) >= 0) { complete = false; break; }
+      const sign = attacker === pos.side ? -1 : 1;
+      for (const victim of victims) {
+        if (pieceType(victim) === PYRAMID) collected[0] += sign;
+        if (pieceType(victim) === ANUBIS) collected[1] += sign;
+        if (pieceType(victim) === PHARAOH) collected[2] += sign;
+      }
+    }
+    if (complete) {
+      assert.deepEqual(collected, expected);
+      assert.equal(evaluate(pos, DEFAULT_PARAMS, true, collected), evaluate(pos));
+    }
+    const params = new EvalParams({ hangingPyramid: 0, hangingAnubis: 0, hangingPharaoh: 0 });
+    assert.equal(evaluate(pos, params), evaluate(pos, params, false));
+  }
+  console.log('Hanging verification: 150 positions; optimized features matched exhaustive shots for both colors');
 });
 test('Static evaluation remains symmetric for ended boards reconstructed without adjudication', () => {
   const pos = applyMove(fromPieces([

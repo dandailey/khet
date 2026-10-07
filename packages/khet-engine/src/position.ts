@@ -108,17 +108,39 @@ export class Position {
     finally { this.side = side; }
   }
 
-  generateBeamMoves(color: Color, out: Int32Array | number[] = this.moves): number {
-    const count = this.generateMovesFor(color, this.beamMoves);
-    this.beamMask.fill(0);
-    for (const sq of this.traceLaser(color).path) this.beamMask[sq] = 1;
-    let n = 0;
-    for (let i = 0; i < count; i++) {
-      const move = this.beamMoves[i];
-      if (this.beamMask[move & 127] || this.beamMask[(move >>> 7) & 127]) out[n++] = move;
+  generateBeamMoves(color: Color, out: Int32Array | number[] = this.moves, mask?: Uint8Array): number {
+    if (color !== SILVER && color !== RED) throw new Error('Invalid mover color');
+    if (this.result !== null) return 0;
+    if (!mask) { this.shotOnPath(color, this.beamMask); mask = this.beamMask; }
+    let count = 0;
+    for (let from = 0; from < 80; from++) {
+      const p = this.board[from];
+      if (!p || pieceColor(p) !== color) continue;
+      const type = pieceType(p), o = orientation(p), onPath = mask[from];
+      if (type !== SPHINX) {
+        for (let d = 0; d < 8; d++) {
+          const to = NEIGHBOURS[from * 8 + d];
+          if (to < 0 || (!onPath && !mask[to]) || !permitted(to, color)) continue;
+          const target = this.board[to], targetType = pieceType(target);
+          if (!target) out[count++] = encodeMove(from, to, STEP);
+          else if (type === SCARAB && (targetType === PYRAMID || targetType === ANUBIS) && permitted(from, pieceColor(target))) {
+            out[count++] = encodeMove(from, to, SWAP);
+          }
+        }
+      }
+      if (!onPath || type === PHARAOH) continue;
+      if (type === SPHINX) {
+        const cw = BEAM_NEXT[from * 4 + ((o + 1) & 3)] >= 0;
+        const ccw = BEAM_NEXT[from * 4 + ((o + 3) & 3)] >= 0;
+        if (cw || ccw) out[count++] = encodeMove(from, from, ROT_CW);
+        if (cw && ccw) out[count++] = encodeMove(from, from, ROT_CCW);
+      } else {
+        out[count++] = encodeMove(from, from, ROT_CW);
+        if (type !== SCARAB) out[count++] = encodeMove(from, from, ROT_CCW);
+      }
     }
-    if (out instanceof Int32Array && n > out.length) throw new Error('Move buffer too small');
-    return n;
+    if (out instanceof Int32Array && count > out.length) throw new Error('Move buffer too small');
+    return count;
   }
 
   /** Fast action + shot preview for a generated move. -1 means no destruction;
@@ -143,17 +165,72 @@ export class Position {
       ? this.generateMovesFor(color, out) : this.generateBeamMoves(color, out);
   }
 
-  findWinInOne(color: Color): number {
-    const count = this.generateTacticalMoves(color, this.moves);
+  /** Reuse a current-board beam marker. Optional victims/counts collect exact
+   * hanging identities on a no-win result; a winning result may exit early. */
+  findWinInOne(color: Color, mask?: Uint8Array, baseShot?: number, victims?: Uint8Array, counts?: Int16Array, sign = 1): number {
+    if (this.result !== null) return -1;
+    victims?.fill(0);
+    if (!mask) { mask = this.beamMask; baseShot = this.shotOnPath(color, mask); }
+    if (baseShot === undefined) baseShot = this.shotOnPath(color, mask);
+    if (baseShot >= 0 && pieceColor(baseShot >>> 7) !== color && (victims || pieceType(baseShot >>> 7) === PHARAOH)) {
+      const unchanged = this.findUnchangedMove(color, mask);
+      if (unchanged >= 0) {
+        if (victims) {
+          const victim = baseShot >>> 7, type = pieceType(victim);
+          victims[baseShot & 127] = victim;
+          if (counts) {
+            if (type === PYRAMID) counts[0] += sign;
+            if (type === ANUBIS) counts[1] += sign;
+            if (type === PHARAOH) counts[2] += sign;
+          }
+        }
+        if (pieceType(baseShot >>> 7) === PHARAOH) return unchanged;
+      }
+    }
+    const count = this.generateBeamMoves(color, this.beamMoves, mask);
     for (let i = 0; i < count; i++) {
-      const shot = this.previewShot(this.moves[i], color), victim = shot >>> 7;
-      if (shot >= 0 && pieceType(victim) === PHARAOH && pieceColor(victim) !== color) return this.moves[i];
+      const move = this.beamMoves[i], shot = this.previewShot(move, color), victim = shot >>> 7;
+      if (shot >= 0 && pieceColor(victim) !== color) {
+        if (victims) {
+          const hit = shot & 127;
+          const sq = (move >>> 14) === SWAP && hit === (move & 127) ? (move >>> 7) & 127 : hit;
+          if (counts && !victims[sq]) {
+            const type = pieceType(victim);
+            if (type === PYRAMID) counts[0] += sign;
+            if (type === ANUBIS) counts[1] += sign;
+            if (type === PHARAOH) counts[2] += sign;
+          }
+          victims[sq] = victim;
+        }
+        if (pieceType(victim) === PHARAOH) return move;
+      }
     }
     return -1;
   }
+  /** First legal action leaving every beam square unchanged, or -1. */
+  findUnchangedMove(color: Color, mask: Uint8Array): number {
+    for (let from = 0; from < 80; from++) {
+      const p = this.board[from], type = pieceType(p);
+      if (!p || pieceColor(p) !== color || mask[from]) continue;
+      if (type !== PHARAOH && type !== SPHINX) return encodeMove(from, from, ROT_CW);
+      if (type === PHARAOH) for (let d = 0; d < 8; d++) {
+        const to = NEIGHBOURS[from * 8 + d];
+        if (to >= 0 && !mask[to] && permitted(to, color) && !this.board[to]) return encodeMove(from, to, STEP);
+      }
+    }
+    return -1;
+  }
+
+  /** Reuse path storage for the evaluation workspace. */
+  traceLaserInto(color: Color, path: Int16Array, mask: Uint8Array): number {
+    path[0] = 0; mask.fill(0);
+    const hit = traceLaserFast(this.board, this.sphinx[color], path, mask);
+    return hit < 0 ? -1 : hit | (this.board[hit] << 7);
+  }
+
   hasWinInOne(color: Color): boolean { return this.findWinInOne(color) >= 0; }
 
-  private isLegal(move: number): boolean {
+  isLegal(move: number): boolean {
     if (!Number.isInteger(move) || move < 0 || move > 65535 || this.result !== null) return false;
     const from = move & 127, to = (move >> 7) & 127, kind = move >> 14;
     if (from >= 80 || to >= 80) return false;
@@ -226,6 +303,13 @@ export class Position {
     this.result = result === -1 ? null : result === 2 ? 'draw' : result as Color;
     this.ply = this.undo[u + 6]; this.side = (this.side ^ 1) as Color;
     this.hash[0] = this.undo[u + 7] >>> 0; this.hash[1] = this.undo[u + 8] >>> 0;
+  }
+
+  /** Packed base shot and a caller-owned square marker, without allocations. */
+  shotOnPath(color: Color, mask: Uint8Array): number {
+    mask.fill(0);
+    const hit = traceLaserFast(this.board, this.sphinx[color], undefined, mask);
+    return hit < 0 ? -1 : hit | (this.board[hit] << 7);
   }
 
   traceLaser(color: Color): LaserResult {

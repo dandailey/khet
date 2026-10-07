@@ -10,15 +10,20 @@ export function reflectedDirection(p: number, travel: number): number {
     : type === SCARAB ? SCARAB_EXIT[o * 4 + face] : -1;
 }
 /** Allocation-free trace. path, when supplied, includes the emitter and stopping square.
+ * A typed path reserves index 0 for length and stores squares starting at 1.
  * Returns only the destroyed square; absorption and board exits return -1. */
-export function traceLaserFast(board: Int8Array, sphinx: number, path?: number[]): number {
+export function traceLaserFast(board: Int8Array, sphinx: number, path?: number[] | Int16Array, mask?: Uint8Array): number {
   if (sphinx < 0) return -1;
   let sq = sphinx, t = orientation(board[sq]);
-  if (path) path.push(sq);
+  if (path instanceof Int16Array) { path[0] = 1; path[1] = sq; }
+  else if (path) path.push(sq);
+  if (mask) mask[sq] = 1;
   for (let steps = 0; steps < 512; steps++) {
     sq = BEAM_NEXT[sq * 4 + t];
     if (sq < 0) return -1;
-    if (path) path.push(sq);
+    if (path instanceof Int16Array) path[++path[0]] = sq;
+    else if (path) path.push(sq);
+    if (mask) mask[sq] = 1;
     const p = board[sq];
     if (!p) continue;
     const type = pieceType(p), o = orientation(p), f = opposite(t);

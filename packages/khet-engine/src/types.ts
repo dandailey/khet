@@ -14,6 +14,8 @@ export interface SearchOptions {
   tt?: boolean; ttSize?: number;
   nullMove?: boolean; lmr?: boolean; qsearch?: boolean; threatExtension?: boolean;
   qDepth?: number;
+  /** Expensive one-move victim evaluation; default on, for self-play ablation. */
+  hangingPieces?: boolean;
   /** Shared flag allows stop from another worker while synchronous search runs. */
   stop?: Int32Array;
   onIteration?: (result: SearchResult) => void;
