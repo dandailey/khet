@@ -20,8 +20,7 @@ export function moveSquares(move: string): { from: number; to: number } {
   return { from: sq(move), to: move.length === 3 ? sq(move) : sq(move.slice(3)) };
 }
 
-/** Rules stay in the engine. This preview applies only the action so traceLaser can
- * record the beam and the victim before makeMove removes it. */
+/** Apply only the action: staging must never trace a laser or remove a victim. */
 function previewAction(position: Position, move: number): Position {
   const from = move & 127, to = (move >> 7) & 127, kind = move >> 14;
   const pieces = position.toPieces();
@@ -55,6 +54,7 @@ export class GameController {
   level: number;
   history: MoveEntry[] = [];
   shot: Shot | null = null;
+  stagedMove: string | null = null;
   private initialKFEN: string;
 
   constructor(setup = 'classic', human: HumanSide = 0, level = 3) {
@@ -69,6 +69,21 @@ export class GameController {
     return !this.shot && this.position.result === null && !this.humanTurn;
   }
   get moves(): string[] { return legalMoves(this.position); }
+  get stagedPieces(): PlacedPiece[] | null {
+    return this.stagedMove === null ? null
+      : previewAction(this.position, parseMove(this.stagedMove, this.position)).toPieces();
+  }
+  stage(move: string): void {
+    if (!this.humanTurn) throw new Error('Wait for your turn');
+    parseMove(move, this.position); // Validate before replacing the pending action.
+    this.stagedMove = move;
+  }
+  clearStage(): void { this.stagedMove = null; }
+  confirm(): Shot {
+    if (this.stagedMove === null) throw new Error('Choose a move before firing');
+    if (!this.humanTurn) throw new Error('Wait for your turn');
+    return this.play(this.stagedMove);
+  }
   play(move: string): Shot {
     if (this.shot) throw new Error('Wait for the laser');
     const encoded = parseMove(move, this.position);
@@ -79,6 +94,7 @@ export class GameController {
       destroyed: laser.hit >= 0 ? preview.pieceAt(laser.hit) : null };
     this.position.makeMove(encoded);
     this.history.push({ move, color });
+    this.clearStage();
     return this.shot;
   }
   finishShot(): void { this.shot = null; }
@@ -90,13 +106,14 @@ export class GameController {
   }
   undo(): void {
     const count = this.undoCount;
+    this.clearStage();
     this.finishShot();
     for (let i = 0; i < count; i++) { this.position.unmakeMove(); this.history.pop(); }
   }
   load(kfen: string): void {
     const position = fromKFEN(kfen); // Validate before changing the active game.
     this.position = position; this.initialKFEN = toKFEN(position);
-    this.history = []; this.shot = null;
+    this.history = []; this.shot = null; this.clearStage();
   }
   positionCommand(): string {
     return `position kfen ${this.initialKFEN}${this.history.length ? ' moves ' + this.history.map(entry => entry.move).join(' ') : ''}`;

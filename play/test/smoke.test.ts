@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ANUBIS, PHARAOH, SETUPS, SPHINX, fromPieces, legalMoves, parseMove, toKFEN,
+  ANUBIS, PHARAOH, Position, SETUPS, SPHINX, fromPieces, legalMoves, parseMove, toKFEN,
 } from '../../packages/khet-engine/src/index.ts';
-import { GameController, rotationMove } from '../src/controller.ts';
+import { GameController, moveSquares, rotationMove } from '../src/controller.ts';
 import { createKEIEngine } from '../src/worker-logic.ts';
 
 function seededRandom(seed: number): () => number {
@@ -25,6 +25,104 @@ function shoot(game: GameController, move: string): void {
   }
   game.finishShot();
 }
+
+test('staging steps, swaps and rotations previews only the action, without firing or changing history', t => {
+  const game = new GameController();
+  const original = toKFEN(game.position), key = game.position.key(), command = game.positionCommand();
+  const position = game.position;
+  for (const method of ['traceLaser', 'traceLaserInto', 'previewShot', 'makeMove'] as const) {
+    t.mock.method(Position.prototype, method, () => { throw new Error(`Staging called ${method}`); });
+  }
+  const moves = ['e1-e2', 'j1+', game.moves.find(move => move.includes('x'))!];
+  assert.ok(moves[2], 'classic setup has a legal swap');
+  for (const move of moves) {
+    const { from, to } = moveSquares(move);
+    const mover = position.pieceAt(from)!, target = position.pieceAt(to);
+    game.stage(move);
+    const pieces = game.stagedPieces!;
+    const at = (square: number) => pieces.find(piece => piece.row * 10 + piece.col === square);
+    assert.equal(game.stagedMove, move);
+    assert.equal(pieces.length, position.toPieces().length);
+    if (from === to) assert.notEqual(at(from)!.o, mover.o);
+    else {
+      assert.deepEqual(at(to), { ...mover, row: Math.floor(to / 10), col: to % 10 });
+      assert.deepEqual(at(from), move.includes('x')
+        ? { ...target, row: Math.floor(from / 10), col: from % 10 } : undefined);
+    }
+    assert.equal(game.position, position);
+    assert.equal(toKFEN(position), original);
+    assert.equal(position.key(), key);
+    assert.equal(game.positionCommand(), command);
+    assert.deepEqual(game.history, []);
+    assert.equal(game.shot, null);
+    assert.equal(game.humanTurn, true);
+    assert.equal(game.aiTurn, false);
+  }
+});
+
+test('confirm plays exactly the staged move once, then lets the AI play directly', () => {
+  const game = new GameController(), expected = new GameController();
+  const expectedShot = expected.play('e1-e2');
+  game.stage('e1-e2');
+  assert.deepEqual(game.confirm(), expectedShot);
+  assert.equal(toKFEN(game.position), toKFEN(expected.position));
+  assert.deepEqual(game.history, [{ move: 'e1-e2', color: 0 }]);
+  assert.equal(game.stagedMove, null);
+  assert.equal(game.stagedPieces, null);
+  assert.equal(game.aiTurn, false, 'AI waits for the human laser animation');
+  assert.throws(() => game.confirm());
+  assert.equal(game.history.length, 1);
+  game.finishShot();
+  assert.equal(game.aiTurn, true);
+  assert.throws(() => game.stage(game.moves[0]), /Wait for your turn/);
+  game.play(game.moves[0]);
+  assert.equal(game.history.length, 2);
+  assert.equal(game.stagedMove, null);
+});
+
+test('cancel restores the board preview and leaves the game ready for another action', () => {
+  const game = new GameController();
+  const original = toKFEN(game.position), pieces = game.position.toPieces();
+  game.stage('e1-e2'); game.clearStage(); game.clearStage();
+  assert.equal(game.stagedMove, null);
+  assert.equal(game.stagedPieces, null);
+  assert.deepEqual(game.position.toPieces(), pieces);
+  assert.equal(toKFEN(game.position), original);
+  assert.equal(game.history.length, 0);
+  assert.equal(game.shot, null);
+  assert.equal(game.humanTurn, true);
+  assert.throws(() => game.confirm(), /Choose a move/);
+  game.stage('j1+');
+  assert.equal(game.stagedMove, 'j1+');
+});
+
+test('replacing a stage uses the original position and confirms only the last action', () => {
+  const game = new GameController(), expected = new GameController();
+  const original = toKFEN(game.position);
+  game.stage('e1-e2'); game.stage('e1-d2'); game.stage('j1+');
+  assert.equal(game.stagedMove, 'j1+');
+  assert.equal(toKFEN(game.position), original);
+  assert.deepEqual(game.stagedPieces!.find(piece => piece.row === 7 && piece.col === 4),
+    { ...game.position.pieceAt(74), row: 7, col: 4 });
+  assert.throws(() => game.stage('e1-e8'));
+  assert.equal(game.stagedMove, 'j1+', 'invalid replacements keep the current stage');
+  expected.play('j1+'); game.confirm();
+  assert.deepEqual(game.history, expected.history);
+  assert.equal(toKFEN(game.position), toKFEN(expected.position));
+  assert.deepEqual(game.shot, expected.shot);
+});
+
+test('undo and loading clear a stage; invalid loads preserve it', () => {
+  const game = new GameController(), original = toKFEN(game.position);
+  game.stage('e1-e2'); game.undo();
+  assert.equal(game.stagedMove, null);
+  assert.equal(toKFEN(game.position), original);
+  game.stage('e1-e2');
+  assert.throws(() => game.load('not a kfen'));
+  assert.equal(game.stagedMove, 'e1-e2');
+  game.load(original);
+  assert.equal(game.stagedMove, null);
+});
 
 for (const [index, setup] of Object.keys(SETUPS).entries()) {
   for (const human of [0, 1] as const) {

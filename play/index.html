@@ -16,8 +16,9 @@
             <div class="files" aria-hidden="true"> <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span><span>i</span><span>j</span></div>
             <div class="board-row"><div class="ranks" aria-hidden="true"><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div><div class="board-stack"><div id="board" class="board"></div><svg id="laser" viewBox="0 0 1000 800" aria-hidden="true"></svg></div></div>
             <div class="board-controls"><span id="selection">Select a Silver piece</span><div><button id="ccw" title="Rotate counterclockwise (Q)" disabled>↶ <span>Q</span></button><button id="cw" title="Rotate clockwise (E)" disabled>↷ <span>E</span></button></div></div>
+            <div id="staged-controls" class="staged-controls" hidden><button id="fire" class="primary" title="Confirm move and fire laser (Enter)">Fire laser</button><button id="cancel-stage" title="Cancel move (Esc)">Cancel</button></div>
           </div>
-          <p class="instruction">Select a piece, then a marked square. Rotate with <kbd>Q</kbd> / <kbd>E</kbd>.</p>
+          <p class="instruction">Select a piece, then a marked square. Rotate with <kbd>Q</kbd> / <kbd>E</kbd>. Confirm with Fire laser or <kbd>Enter</kbd>; cancel with <kbd>Esc</kbd>.</p>
           <div id="legend" class="legend"></div>
           <div class="engine-status"><span id="thinking" aria-live="polite">Engine ready</span><button id="hint">Hint · level 3</button><button id="undo">Undo turn</button></div>
           <div id="debug" class="debug">depth — · score — · nodes — · pv —</div>

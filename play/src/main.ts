@@ -15,6 +15,7 @@ const board = element('board');
 const laser = document.getElementById('laser')!;
 const kfen = element<HTMLTextAreaElement>('kfen');
 const cw = element<HTMLButtonElement>('cw'), ccw = element<HTMLButtonElement>('ccw');
+const fireButton = element<HTMLButtonElement>('fire'), cancelStageButton = element<HTMLButtonElement>('cancel-stage');
 const hintButton = element<HTMLButtonElement>('hint'), undoButton = element<HTMLButtonElement>('undo');
 const setup = element<HTMLSelectElement>('setup');
 setup.replaceChildren(...Object.keys(SETUPS).map(name => new Option(name[0].toUpperCase() + name.slice(1), name)));
@@ -48,7 +49,8 @@ function updateThinking(): void {
 }
 function render(): void {
   const canPlay = game.humanTurn && !request;
-  const pieces = game.shot?.pieces ?? game.position.toPieces();
+  const pieces = game.shot?.pieces ?? game.stagedPieces ?? game.position.toPieces();
+  const staged = game.stagedMove ? moveSquares(game.stagedMove) : null;
   const bySquare = new Map(pieces.map(piece => [piece.row * 10 + piece.col, piece]));
   const selectedMoves = selected === null ? [] : game.moves.filter(move => moveSquares(move).from === selected);
   const targets = new Map(selectedMoves.filter(move => move.length > 3).map(move => [moveSquares(move).to, move]));
@@ -69,6 +71,12 @@ function render(): void {
     button.setAttribute('aria-pressed', String(sq === selected));
     button.disabled = !canPlay;
     if (piece) button.innerHTML = pieceSVG(piece);
+    if (staged?.from === sq) {
+      const ghost = document.createElement('span'); ghost.className = 'piece-ghost';
+      ghost.innerHTML = pieceSVG(game.position.pieceAt(sq)!);
+      button.append(ghost);
+      button.setAttribute('aria-label', `${description} · staged move origin`);
+    }
     return button;
   }));
   laser.replaceChildren();
@@ -83,7 +91,10 @@ function render(): void {
   }
   cw.disabled = !canPlay || selected === null || !rotationMove(game.position, selected, true);
   ccw.disabled = !canPlay || selected === null || !rotationMove(game.position, selected, false);
-  hintButton.disabled = !canPlay;
+  element('staged-controls').hidden = staged === null;
+  fireButton.disabled = !canPlay || staged === null;
+  cancelStageButton.disabled = staged === null;
+  hintButton.disabled = !canPlay || staged !== null;
   undoButton.disabled = game.undoCount === 0;
   const result = game.shot ? null : game.position.result;
   element('turn').textContent = result === 'draw' ? 'Draw · threefold repetition'
@@ -92,7 +103,7 @@ function render(): void {
   element('turn-dot').classList.toggle('red', (result === 0 || result === 1 ? result : game.shot?.color ?? game.position.side) === 1);
   const last = game.history.at(-1);
   element('last-move').textContent = last ? `${colorName(last.color)} · ${last.move}` : 'Silver moves first';
-  element('selection').textContent = hint ? `Hint: ${hint}` : selected !== null
+  element('selection').textContent = game.stagedMove ? `Staged: ${game.stagedMove} · ready to fire` : hint ? `Hint: ${hint}` : selected !== null
     ? `${PIECE_NAMES[game.position.pieceAt(selected)!.type]} · ${squareName(selected)}`
     : game.shot ? 'Watch the laser' : game.humanTurn ? `Select a ${colorName(game.position.side)} piece` : game.human === 'watch' ? 'AI vs AI · watch mode' : 'Waiting for the engine';
   element('debug').textContent = debug;
@@ -122,14 +133,15 @@ function scheduleAI(): void {
   clearTimeout(aiTimer);
   if (game.aiTurn && !request) aiTimer = setTimeout(() => askAI(false), 60);
 }
-function play(move: string): void {
+function play(move?: string): void {
   try {
-    game.play(move); selected = null; hint = null; render();
+    if (move === undefined) game.confirm(); else game.play(move);
+    selected = null; hint = null; render();
     animationTimer = setTimeout(() => { game.finishShot(); render(); scheduleAI(); }, 1200);
   } catch (error) { notice(error instanceof Error ? error.message : String(error)); render(); }
 }
 function askAI(isHint: boolean): void {
-  if (request || (isHint ? !game.humanTurn : !game.aiTurn)) return;
+  if (request || (isHint ? !game.humanTurn || game.stagedMove !== null : !game.aiTurn)) return;
   notice(''); hint = null; selected = null;
   const worker = new PlayWorker(); activeWorker = worker;
   request = { mode: isHint ? 'hint' : 'move', started: performance.now() }; render();
@@ -162,22 +174,39 @@ board.addEventListener('click', event => {
   if (!target) return;
   const square = Number(target.dataset.square);
   const move = selected === null ? undefined : game.moves.find(candidate => candidate.length > 3 && moveSquares(candidate).from === selected && moveSquares(candidate).to === square);
-  if (move) { notice(''); play(move); return; }
+  if (move) { stage(move); return; }
   const piece = game.position.pieceAt(square);
+  game.clearStage();
   selected = piece?.color === game.position.side && selected !== square ? square : null;
   hint = null; render();
 });
+function stage(move: string): void {
+  game.stage(move); hint = null; notice(''); render();
+}
+function clearStage(): void {
+  game.clearStage(); selected = null; hint = null; notice(''); render();
+}
+function confirmStage(): void {
+  if (!game.humanTurn || request || game.stagedMove === null) return;
+  notice(''); play();
+}
+fireButton.addEventListener('click', confirmStage);
+cancelStageButton.addEventListener('click', clearStage);
 function rotate(clockwise: boolean): void {
   if (!game.humanTurn || request || selected === null) return;
   const move = rotationMove(game.position, selected, clockwise);
-  if (move) { notice(''); play(move); }
+  if (move) stage(move);
 }
 cw.addEventListener('click', () => rotate(true)); ccw.addEventListener('click', () => rotate(false));
 document.addEventListener('keydown', event => {
   if (event.ctrlKey || event.metaKey || event.altKey || event.repeat || (event.target as Element).closest('input,textarea,select,[contenteditable]')) return;
   if (event.key.toLowerCase() === 'q' || event.key.toLowerCase() === 'e') {
     event.preventDefault(); rotate(event.key.toLowerCase() === 'e');
-  } else if (event.key === 'Escape') { selected = null; hint = null; render(); }
+  } else if (event.key === 'Escape') { event.preventDefault(); clearStage(); }
+  else if (event.key === 'Enter' && game.stagedMove !== null &&
+    !(event.target as Element).closest('button:not([data-square]):not(#fire):not(#cw):not(#ccw)')) {
+    event.preventDefault(); confirmStage();
+  }
 });
 hintButton.addEventListener('click', () => askAI(true));
 undoButton.addEventListener('click', () => {
