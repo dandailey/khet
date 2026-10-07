@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10151e" />
+    <title>Khet · Engine playground</title>
+  </head>
+  <body>
+    <main>
+      <header class="masthead"><div><span class="eyebrow">LASER CHESS / ENGINE PLAYGROUND</span><h1>Khet <span>2.0</span></h1></div><span class="badge">PLAY TEST</span></header>
+      <div class="layout">
+        <section class="board-panel" aria-label="Game board">
+          <div class="status-row"><div><span id="turn-dot" class="turn-dot"></span><strong id="turn" aria-live="polite"></strong></div><span id="last-move">Silver moves first</span></div>
+          <div class="board-frame">
+            <div class="files" aria-hidden="true"> <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span><span>i</span><span>j</span></div>
+            <div class="board-row"><div class="ranks" aria-hidden="true"><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div><div class="board-stack"><div id="board" class="board"></div><svg id="laser" viewBox="0 0 1000 800" aria-hidden="true"></svg></div></div>
+            <div class="board-controls"><span id="selection">Select a Silver piece</span><div><button id="ccw" title="Rotate counterclockwise (Q)" disabled>↶ <span>Q</span></button><button id="cw" title="Rotate clockwise (E)" disabled>↷ <span>E</span></button></div></div>
+          </div>
+          <p class="instruction">Select a piece, then a marked square. Rotate with <kbd>Q</kbd> / <kbd>E</kbd>.</p>
+          <div id="legend" class="legend"></div>
+          <div class="engine-status"><span id="thinking" aria-live="polite">Engine ready</span><button id="hint">Hint · level 3</button><button id="undo">Undo turn</button></div>
+          <div id="debug" class="debug">depth — · score — · nodes — · pv —</div>
+          <p id="notice" class="notice" role="status"></p>
+        </section>
+        <aside>
+          <section class="panel"><h2>New game</h2><form id="new-game"><label>Starting setup<select id="setup"></select></label><label>You play<select id="human"><option value="0">Silver · moves first</option><option value="1">Red</option><option value="watch">AI vs AI · watch</option></select></label><label>AI level<select id="level"><option value="1">1 · 200 ms</option><option value="2">2 · 400 ms</option><option value="3" selected>3 · 800 ms</option><option value="4">4 · 1.5 s</option><option value="5">5 · 3 s</option></select></label><button class="primary" type="submit">Start new game</button></form></section>
+          <section class="panel moves-panel"><div class="panel-heading"><h2>Move list</h2><span id="move-count">0 plies</span></div><div id="moves" class="moves"><p class="muted">The first shot is yours.</p></div></section>
+          <section class="panel"><h2>Position · KFEN</h2><label for="kfen" class="muted">Copy the position, or paste one to reproduce a game.</label><textarea id="kfen" rows="4" spellcheck="false" aria-label="KFEN position"></textarea><div class="kfen-actions"><button id="current-kfen">Show current</button><button id="load-kfen">Load position</button></div><p class="fine-print">Loading starts a new history for repetition and undo.</p></section>
+        </aside>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
