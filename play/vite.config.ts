@@ -35,7 +35,7 @@ function singleFile(): Plugin {
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),
   plugins: [singleFile()],
-  worker: { format: 'es' },
+  worker: { format: 'iife' },
   build: {
     outDir: 'dist', emptyOutDir: true, cssCodeSplit: false,
     modulePreload: false,
