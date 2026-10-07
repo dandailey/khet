@@ -3,7 +3,7 @@
 // sigmoid(K * score) against the game result (side-to-move perspective), with a held-out validation split.
 //
 // node tools/texel-linear.ts --data FILE [--out params.json] [--epochs 300] [--lr 0.5] [--l2 0.0001]
-//   [--l2-pst 0.002] [--val 0.1] [--fix pyramid,hangingPharaoh] [--max N]
+//   [--l2-pst 0.002] [--val 0.1] [--fix pyramid,hangingPharaoh] [--no-pst] [--max N]
 import { createReadStream, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { DEFAULT_PARAMS, PARAM_NAMES, evaluationFeatures, fromKFEN } from '../packages/khet-engine/src/index.ts';
@@ -51,13 +51,15 @@ export async function main(): Promise<void> {
   const l2 = numberArg(flags.l2, 0.0001, 'l2', 0), l2pst = numberArg(flags['l2-pst'], 0.002, 'l2-pst', 0);
   const valFrac = numberArg(flags.val, 0.1, 'val', 0);
   const fixed = new Set((flags.fix ?? 'pyramid,hangingPharaoh').split(',').filter(Boolean));
+  if (flags['no-pst']) for (const name of PARAM_NAMES) if (name.startsWith('pst')) fixed.add(name);
   const d = await load(flags.data, numberArg(flags.max, 1e9, 'max'));
   const w0 = Float64Array.from(DEFAULT_PARAMS.values), w = w0.slice();
   const s = new Float64Array(d.n);
-  // Deterministic split: every k-th position is validation.
+  // Deterministic block split: positions from one game are written consecutively, so contiguous blocks of
+  // 500 lines keep (almost all of) a game on one side of the split and avoid leakage between the sets.
   const k = valFrac > 0 ? Math.round(1 / valFrac) : 0;
   const train: number[] = [], val: number[] = [];
-  for (let i = 0; i < d.n; i++) (k && i % k === 0 ? val : train).push(i);
+  for (let i = 0; i < d.n; i++) (k && Math.floor(i / 500) % k === 0 ? val : train).push(i);
   const tr = Int32Array.from(train), va = Int32Array.from(val);
   // Fit K on the default weights (golden-section search on training MSE).
   scores(d, w, s);

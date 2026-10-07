@@ -36,3 +36,21 @@ khetai time forfeits (its clock is checked only between iterations; an iteration
 ours ~2.3-3.9), so the margin comes from evaluation and tactics (win-in-1 checks, hanging-piece term), not depth.
 An earlier partial run (crashed on the same timeout before the forfeit fix) stood at 17 W / 3 D / 3 L.
 Raw results: local `tools/results/khetai/m500c.jsonl`.
+
+## 2026-10-07 — Texel (static) tuning: rejected
+
+Data: 3,000 self-play games at 2,000 nodes per move over 1,500 fresh openings; 65,523 quiet positions labelled
+by game result (side-to-move perspective; checked). Tool: `tools/texel-linear.ts` (features precomputed, Adam,
+held-out validation; block split by game added after fit 1 leaked same-game positions into validation).
+
+| Candidate | Validation MSE (start -> fit) | Match vs default, 20k nodes/move | Verdict |
+|---|---|---|---|
+| fit 1: all 417 weights incl. piece-square tables | 0.1777 -> 0.1728 (leaky split) | -121.8 [-182.8, -64.9], 92 games, SPRT H0 | rejected |
+| fit 2: scalars only, block split | 0.1722 -> 0.1696 | -146.5 [-218.0, -77.1], 128 games, SPRT H0 | rejected |
+| fit 2 half-step (midpoint default/fit) | n/a | -46.1 [-89.1, -3.3], 220 games, SPRT H0 | rejected |
+
+The static fit's direction is consistently worse in play: it raises hanging-piece penalties (-45 -> -100),
+tempo (5 -> 23), exposure terms, and makes scarab mobility strongly negative. Working hypothesis: the labels
+reflect the weak 2,000-node generator, so the fit learns that generator's weaknesses (positions with hanging
+pieces lose at depth 2 but are defensible for a deeper search). Default parameters stay. Next: game-based tuning
+(SPSA) on a few scalars at the target search depth, as a long background job.
