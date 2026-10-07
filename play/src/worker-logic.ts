@@ -19,7 +19,7 @@ export function createKEIEngine(send: (line: string) => void, random = Math.rand
       const candidates = safe.length ? safe : moves;
       const move = candidates[Math.floor(random() * candidates.length)] ?? '(none)';
       send('info string bestMove not implemented; random legal fallback (avoids self-kill when possible)');
-      return { move, depth: 0, score: 0, nodes: moves.length, pv: move === '(none)' ? [] : [move] };
+      return { move, depth: 0, score: 0, nodes: moves.length, pv: move === '(none)' ? [] : [move], timeMs: 0 };
     }
   }
   return command => {
