@@ -93,12 +93,13 @@ test('Classic move count is computed and pinned; output buffers and notation agr
   for (const move of list) assert.equal(parseMove(moveToString(move, pos), pos), move);
   assert.throws(() => pos.generateMoves(new Int32Array(1)), /buffer too small/);
 });
-test('Convenience wrappers preserve original state, clone undo and expose the required stub', () => {
+test('Convenience wrappers preserve original state, clone undo and return a searched move', () => {
   const pos = newGame(), original = toKFEN(pos), text = legalMoves(pos)[0], next = applyMove(pos, text);
   assert.equal(toKFEN(pos), original); assert.notEqual(toKFEN(next), original);
   next.unmakeMove(); assert.equal(toKFEN(next), original);
   assert.deepEqual(laserResult(pos, SILVER), pos.traceLaser(SILVER));
-  assert.throws(() => bestMove(pos), { message: 'bestMove: not implemented' });
+  assert.ok(legalMoves(pos).includes(bestMove(pos, { depth: 1, ttSize: 1024 }).move));
+  assert.equal(toKFEN(pos), original);
   assert.throws(() => newGame('imhotep'), /Unknown setup/);
   assert.throws(() => newGame('toString'), /Unknown setup/);
   assert.equal(fromKFEN(original).key(), pos.key());

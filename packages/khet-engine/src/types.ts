@@ -8,8 +8,17 @@ export type Result = Color | 'draw' | null;
 export interface Piece { type: number; color: Color; o: number }
 export interface PlacedPiece extends Piece { row: number; col: number }
 export interface LaserResult { path: number[]; hit: number; hitType: number | null }
-export interface SearchOptions { level?: number; timeMs?: number; depth?: number; seed?: number }
-export interface SearchResult { move: string; score: number; depth: number; nodes: number; pv: string[] }
+export interface SearchOptions {
+  level?: number; timeMs?: number; depth?: number; nodes?: number; seed?: number;
+  params?: import('./eval.ts').EvalParams | Record<string, number>;
+  tt?: boolean; ttSize?: number;
+  nullMove?: boolean; lmr?: boolean; qsearch?: boolean; threatExtension?: boolean;
+  qDepth?: number;
+  /** Shared flag allows stop from another worker while synchronous search runs. */
+  stop?: Int32Array;
+  onIteration?: (result: SearchResult) => void;
+}
+export interface SearchResult { move: string; score: number; depth: number; nodes: number; pv: string[]; timeMs: number }
 export function opposite(d: number): number { return (d + 2) & 3; }
 export function encodePiece(type: number, color: Color, o: number): number {
   return type | (color << 3) | (o << 4);

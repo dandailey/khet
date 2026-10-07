@@ -3,6 +3,12 @@ import { ANUBIS, PHARAOH, PYRAMID, SCARAB, SPHINX, opposite, orientation, pieceT
 // Indexed by orientation then entry face. -1 means destruction.
 const PYRAMID_EXIT = new Int8Array([1, 0, -1, -1, -1, 2, 1, -1, -1, -1, 3, 2, 3, -1, -1, 0]);
 const SCARAB_EXIT = new Int8Array([1, 0, 3, 2, 3, 2, 1, 0]);
+/** Travel direction after reflection, or -1 for a nonreflecting face/piece. */
+export function reflectedDirection(p: number, travel: number): number {
+  const type = pieceType(p), face = opposite(travel), o = orientation(p);
+  return type === PYRAMID ? PYRAMID_EXIT[o * 4 + face]
+    : type === SCARAB ? SCARAB_EXIT[o * 4 + face] : -1;
+}
 /** Allocation-free trace. path, when supplied, includes the emitter and stopping square.
  * Returns only the destroyed square; absorption and board exits return -1. */
 export function traceLaserFast(board: Int8Array, sphinx: number, path?: number[]): number {
