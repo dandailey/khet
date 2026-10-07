@@ -12,7 +12,6 @@ export interface Shot {
   destroyed: Piece | null;
   color: Color;
 }
-export const LEVEL_TIMES = [200, 400, 800, 1500, 3000] as const;
 export function squareName(sq: number): string {
   return String.fromCharCode(97 + sq % 10) + (8 - Math.floor(sq / 10));
 }
@@ -104,6 +103,6 @@ export class GameController {
   }
   goCommand(hint = false): string {
     const level = hint ? 3 : Math.max(1, Math.min(5, this.level));
-    return `go level ${level} movetime ${LEVEL_TIMES[level - 1]}`;
+    return `go level ${level}`;
   }
 }

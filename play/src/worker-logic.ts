@@ -46,8 +46,11 @@ export function createKEIEngine(send: (line: string) => void, random = Math.rand
           if (words[i] === 'level') options.level = value;
           else if (words[i] === 'movetime') options.timeMs = value;
           else if (words[i] === 'depth') options.depth = value;
+          else if (words[i] === 'seed') options.seed = value;
           else throw new Error('Unknown go option');
         }
+        // Vary level noise between moves and games unless a seed is given explicitly.
+        if (options.seed === undefined) options.seed = Math.floor(random() * 0x7fffffff) + 1;
         if (position.result !== null) { send('bestmove (none)'); return; }
         const result = search(options);
         send(`info depth ${result.depth} score ${result.score} nodes ${result.nodes} pv ${result.pv.join(' ')}`);

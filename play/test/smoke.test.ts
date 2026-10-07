@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ANUBIS, PHARAOH, SETUPS, SPHINX, fromPieces, legalMoves, parseMove, toKFEN,
 } from '../../packages/khet-engine/src/index.ts';
-import { GameController, LEVEL_TIMES, rotationMove } from '../src/controller.ts';
+import { GameController, rotationMove } from '../src/controller.ts';
 import { createKEIEngine } from '../src/worker-logic.ts';
 
 function seededRandom(seed: number): () => number {
@@ -120,15 +120,15 @@ test('invalid KFEN and illegal moves leave the game intact; valid load resets hi
   assert.equal(game.positionCommand(), `position kfen ${current}`);
 });
 
-test('Sphinx rotation buttons reflect the physical turn and levels supply movetime', () => {
+test('Sphinx rotation buttons reflect the physical turn and levels map to KEI level commands', () => {
   const game = new GameController();
   assert.equal(rotationMove(game.position, 79, true), undefined);
   assert.equal(rotationMove(game.position, 79, false), 'j1+');
   for (let level = 1; level <= 5; level++) {
     game.level = level;
-    assert.equal(game.goCommand(), `go level ${level} movetime ${LEVEL_TIMES[level - 1]}`);
+    assert.equal(game.goCommand(), `go level ${level}`);
   }
-  assert.equal(game.goCommand(true), 'go level 3 movetime 800');
+  assert.equal(game.goCommand(true), 'go level 3');
 });
 
 test('KEI supports readiness, setup replay, bad-command recovery, stop and quit', () => {
