@@ -1,0 +1,97 @@
+{
+  "seed": 20261007,
+  "positions": 500,
+  "randomGames": 10,
+  "laserChecks": 1004,
+  "moveSetComparisons": 500,
+  "returnedMoves": 500,
+  "legalReturnedMoves": 500,
+  "illegalReturnedMoves": [],
+  "reservedSwapExtras": 2,
+  "sphinxSwapExtras": 17,
+  "ruleDifferenceExamples": [
+    {
+      "move": "j2xj1",
+      "kfen": "ss3p3as4/5f-4/1p12p41as1p21/3c\\P4c/P23/2C/p11p24/3AnAnP11P32/5F-3C\\/3P2P14Sn s 32",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "j2xj1",
+      "kfen": "ss3p3as4/1p13f-4/4p41as1p21/3c\\P4c/P23/2C/p1P1p24/3AnAn2P32/5F-3C\\/3P2P14Sn s 34",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "j2xj1",
+      "kfen": "ss3p3as4/2p12f-4/4p41as1p21/3c\\P4c/P23/2C/p1P1p24/3AnAn5/5F-2P3C\\/3P2P14Sn s 36",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "j2xj1",
+      "kfen": "ss3p3asf-3/2p17/4p41as1p21/3c\\P4c/P23/2C/p11p24/3AnAnP14/5F-2P3C\\/3P2P14Sn s 38",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "j2xj1",
+      "kfen": "ss3p3asf-3/2p13as3/4p43p21/3c\\P4c/P23/2C/p11p24/3AnAnP14/5F-1P31C\\/3P2P14Sn s 40",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "j2xj1",
+      "kfen": "ss3p3asf-3/2p13as3/4p43p21/3c\\P4c\\P23/2C/p11p24/3AnAnP14/5F-1P41C\\/3P2P14Sn s 42",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "j2xj1",
+      "kfen": "ss3p4asf-3/2p13as3/4p43p21/3c\\P4c\\P23/3p11p24/2C/AnAnP14/5F-1P41C\\/3P2P14Sn s 44",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "b7xa8",
+      "kfen": "ss2as6/1c\\2p4p4f-3/1p15asp41/4P41P13/2p1AnP2p2P23/1C/3c/1P4C\\1/5F-4/2An1P34Sn r 81",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "b7xa8",
+      "kfen": "ss2as6/1c\\2p4p4f-3/1p14as1p41/4P41P13/2p1AnP2p2P23/1C/3c/2C\\1/5F-2P41/2An1P34Sn r 83",
+      "reason": "sphinx-swap"
+    },
+    {
+      "move": "b7xa8",
+      "kfen": "ss2as6/1c\\2p4p4f-3/1p14aw1p41/4P41P13/2p1AnP2p2P21C\\1/1C/3c/4/5F-2P41/2An1P34Sn r 85",
+      "reason": "sphinx-swap"
+    }
+  ],
+  "targetedDifferences": [
+    "b8xc7 displaces red onto silver reservation",
+    "j2xj1 swaps with own Sphinx"
+  ],
+  "orientations": [
+    "1:0:0",
+    "1:1:0",
+    "2:0:0",
+    "2:0:3",
+    "2:1:1",
+    "2:1:2",
+    "3:0:0",
+    "3:0:1",
+    "3:0:2",
+    "3:0:3",
+    "3:1:0",
+    "3:1:1",
+    "3:1:2",
+    "3:1:3",
+    "4:0:0",
+    "4:0:1",
+    "4:1:0",
+    "4:1:1",
+    "5:0:0",
+    "5:0:1",
+    "5:0:2",
+    "5:0:3",
+    "5:1:0",
+    "5:1:1",
+    "5:1:2",
+    "5:1:3"
+  ],
+  "note": "Laser checks include both sides of every position plus two targeted fixtures; board inputs alternate 80/120 tokens. Search returns are not filtered."
+}

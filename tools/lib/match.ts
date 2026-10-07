@@ -28,7 +28,20 @@ export class MatchRunner {
   busy = false;
   closed = false;
   constructor(concurrency = 2) { this.concurrency = integer(concurrency, 'concurrency'); if (concurrency > 3) throw new Error('Concurrency is capped at 3'); }
-  async close(): Promise<void> { this.closed = true; await Promise.all(this.workers.map(w => w.terminate())); this.workers = []; }
+  async close(): Promise<void> {
+    this.closed = true;
+    await Promise.all(this.workers.map(async worker => {
+      // Let each IO worker close its persistent external CLI before termination.
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(done, 10000);
+        function message(value: { kind: string }) { if (value.kind === 'closed') done(); }
+        function done() { clearTimeout(timer); worker.off('message', message); worker.off('exit', done); resolve(); }
+        worker.on('message', message); worker.once('exit', done); worker.postMessage({ kind: 'close' });
+      });
+      await worker.terminate();
+    }));
+    this.workers = [];
+  }
   async run(options: MatchOptions): Promise<MatchSummary> {
     if (this.closed || this.busy) throw new Error('Runner is closed or already running');
     validateConfig(options.a); validateConfig(options.b);
