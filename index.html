@@ -24,9 +24,15 @@
         </div>
         
         <div class="controls">
+          <span id="sync-indicator" class="sync-indicator hidden">Offline</span>
           <div class="share-menu-container">
             <button id="share-menu-btn" class="btn btn-secondary">Share</button>
             <div id="share-menu" class="share-menu hidden">
+              <button id="play-online-btn" class="share-menu-item share-menu-item--highlight hidden">Play Online</button>
+              <button id="invite-btn" class="share-menu-item hidden">Invite Opponent</button>
+              <button id="copy-session-id-btn" class="share-menu-item hidden">Copy Session Link</button>
+              <button id="leave-online-btn" class="share-menu-item share-menu-item--danger hidden">Leave Online Game</button>
+              <div class="share-menu-divider"></div>
               <button id="copy-link-btn" class="share-menu-item">Copy Link</button>
               <button id="share-btn" class="share-menu-item">Share via...</button>
               <button id="show-qr-btn" class="share-menu-item">Show QR Code</button>
@@ -34,6 +40,47 @@
             </div>
           </div>
           <button id="reset-game" class="btn btn-secondary">Reset Game</button>
+        </div>
+        
+        <!-- Turn Overlay -->
+        <div id="turn-overlay" class="turn-overlay hidden">
+          <div class="turn-overlay-content">
+            <h2 class="turn-title">It's your turn!</h2>
+            <p class="turn-summary hidden"></p>
+            <button id="start-turn-btn" class="btn btn-primary">Start Turn</button>
+          </div>
+        </div>
+        
+        <!-- Invite Modal -->
+        <div id="invite-modal" class="invite-modal hidden">
+          <div class="invite-modal-content">
+            <h2>Invite Opponent</h2>
+            <p class="invite-subtitle">Share this link or code with your opponent</p>
+            
+            <div class="invite-qr-container">
+              <canvas class="invite-qr"></canvas>
+            </div>
+            
+            <div class="invite-code-container">
+              <label>Session Code</label>
+              <div class="invite-code-row">
+                <span class="invite-code"></span>
+                <button id="copy-code-btn" class="btn btn-small">Copy</button>
+              </div>
+            </div>
+            
+            <div class="invite-link-container">
+              <label>Share Link</label>
+              <div class="invite-link-row">
+                <input type="text" class="invite-link" readonly />
+                <button id="copy-invite-link-btn" class="btn btn-small">Copy</button>
+              </div>
+            </div>
+            
+            <p class="invite-waiting">Waiting for opponent to join...</p>
+            
+            <button id="close-invite-btn" class="btn btn-secondary">Close</button>
+          </div>
         </div>
         
         <!-- QR Code Overlay -->

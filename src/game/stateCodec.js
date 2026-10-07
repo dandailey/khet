@@ -179,6 +179,62 @@ export function encodeState(gameState) {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
 }
 
+/**
+ * Encode full state for GameSync (includes sync metadata)
+ * Format: JSON with board state encoded as base64url
+ */
+export function encodeFullState(gameState) {
+  const boardEncoded = encodeState(gameState)
+  
+  const fullState = {
+    v: 2, // Version 2 = full state with sync
+    board: boardEncoded,
+    sync: gameState.sync || {
+      redId: null,
+      silverId: null,
+      lastTurnId: 0,
+      turnHistory: []
+    }
+  }
+  
+  return JSON.stringify(fullState)
+}
+
+/**
+ * Decode full state from GameSync
+ */
+export function decodeFullState(encoded) {
+  try {
+    // Try to parse as JSON first (new format)
+    const parsed = JSON.parse(encoded)
+    
+    if (parsed.v === 2 && parsed.board) {
+      // Version 2: full state with sync
+      const boardState = decodeState(parsed.board)
+      boardState.sync = parsed.sync || {
+        redId: null,
+        silverId: null,
+        lastTurnId: 0,
+        turnHistory: []
+      }
+      return boardState
+    }
+    
+    // Unknown JSON format
+    throw new Error('Unknown state format')
+  } catch (jsonError) {
+    // Not JSON, try legacy binary format
+    const boardState = decodeState(encoded)
+    boardState.sync = {
+      redId: null,
+      silverId: null,
+      lastTurnId: 0,
+      turnHistory: []
+    }
+    return boardState
+  }
+}
+
 // Decode base64url string to game state
 export function decodeState(encoded) {
   try {

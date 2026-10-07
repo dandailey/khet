@@ -442,6 +442,75 @@ main {
   background: rgba(255, 255, 255, 0.15);
 }
 
+.share-menu-item.hidden {
+  display: none;
+}
+
+.share-menu-item--highlight {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+}
+
+.share-menu-item--highlight:hover {
+  background: rgba(99, 102, 241, 0.35);
+}
+
+.share-menu-item--danger {
+  color: #f87171;
+}
+
+.share-menu-item--danger:hover {
+  background: rgba(248, 113, 113, 0.15);
+}
+
+.share-menu-divider {
+  height: 0.0625em;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0.25em 0;
+}
+
+.sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375em 0.75em;
+  background: rgba(100, 100, 100, 0.3);
+  border: 0.0625em solid rgba(100, 100, 100, 0.5);
+  border-radius: 0.5em;
+  color: #888;
+  font-size: 0.875em;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.sync-indicator.sync-online {
+  background: rgba(46, 213, 115, 0.2);
+  border-color: rgba(46, 213, 115, 0.4);
+  color: #2ed573;
+}
+
+.sync-indicator.sync-waiting {
+  background: rgba(251, 191, 36, 0.2);
+  border-color: rgba(251, 191, 36, 0.4);
+  color: #fbbf24;
+}
+
+.sync-indicator.sync-your-turn {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #a5b4fc;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.sync-indicator.sync-opponent-turn {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.4);
+  color: #94a3b8;
+}
+
+.sync-indicator.hidden {
+  display: none;
+}
+
 .btn {
   padding: 0.75em 1.5em;
   border: none;
@@ -873,6 +942,193 @@ main {
   border-left: 0.25em solid #74b9ff;
 }
 
+/* Turn Overlay */
+.turn-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 900;
+  backdrop-filter: blur(4px);
+  animation: fade-in 0.3s ease;
+}
+
+.turn-overlay.hidden {
+  display: none;
+}
+
+.turn-overlay-content {
+  background: linear-gradient(135deg, rgba(30, 32, 50, 0.98), rgba(20, 22, 35, 0.98));
+  border: 0.125em solid rgba(99, 102, 241, 0.4);
+  border-radius: 1.25em;
+  padding: 2.5em 3em;
+  text-align: center;
+  box-shadow: 0 0 2.5em rgba(99, 102, 241, 0.3), 0 0.75em 2.5em rgba(0, 0, 0, 0.6);
+  max-width: 90%;
+  animation: scale-in 0.3s ease;
+}
+
+.turn-title {
+  color: #a5b4fc;
+  font-size: 2em;
+  margin-bottom: 0.75em;
+  text-shadow: 0 0 1.5em rgba(99, 102, 241, 0.5);
+}
+
+.turn-summary {
+  color: #94a3b8;
+  font-size: 1em;
+  margin-bottom: 1.5em;
+  line-height: 1.5;
+}
+
+/* Invite Modal */
+.invite-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: fade-in 0.3s ease;
+}
+
+.invite-modal.hidden {
+  display: none;
+}
+
+.invite-modal-content {
+  background: linear-gradient(135deg, rgba(30, 32, 50, 0.98), rgba(20, 22, 35, 0.98));
+  border: 0.125em solid rgba(255, 255, 255, 0.15);
+  border-radius: 1.25em;
+  padding: 2.5em;
+  text-align: center;
+  box-shadow: 0 0.75em 3em rgba(0, 0, 0, 0.7);
+  max-width: 90%;
+  min-width: 20em;
+  animation: scale-in 0.3s ease;
+}
+
+.invite-modal-content h2 {
+  color: #e9ecf1;
+  font-size: 1.75em;
+  margin-bottom: 0.5em;
+}
+
+.invite-subtitle {
+  color: #94a3b8;
+  font-size: 0.95em;
+  margin-bottom: 1.5em;
+}
+
+.invite-qr-container {
+  margin: 1.5em 0;
+}
+
+.invite-qr {
+  border-radius: 0.75em;
+  max-width: 180px;
+  height: auto;
+}
+
+.invite-code-container,
+.invite-link-container {
+  text-align: left;
+  margin-bottom: 1.25em;
+}
+
+.invite-code-container label,
+.invite-link-container label {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.85em;
+  margin-bottom: 0.5em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.invite-code-row,
+.invite-link-row {
+  display: flex;
+  gap: 0.75em;
+  align-items: center;
+}
+
+.invite-code {
+  font-family: 'Courier New', monospace;
+  font-size: 1.5em;
+  font-weight: bold;
+  color: #a5b4fc;
+  letter-spacing: 0.15em;
+  background: rgba(99, 102, 241, 0.15);
+  padding: 0.5em 1em;
+  border-radius: 0.5em;
+  flex: 1;
+}
+
+.invite-link {
+  flex: 1;
+  padding: 0.625em 0.875em;
+  background: rgba(30, 30, 40, 0.8);
+  border: 0.0625em solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.5em;
+  color: #94a3b8;
+  font-size: 0.85em;
+  font-family: 'Courier New', monospace;
+}
+
+.invite-waiting {
+  color: #fbbf24;
+  font-size: 0.95em;
+  margin: 1.5em 0;
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.btn-small {
+  padding: 0.5em 0.875em;
+  font-size: 0.85em;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0.5em rgba(99, 102, 241, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 1em rgba(99, 102, 241, 0.6);
+  }
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 @media (max-width: 768px) {
   .share-menu {
     left: auto;
@@ -898,5 +1154,22 @@ main {
     right: 0.625em;
     left: 0.625em;
     max-width: none;
+  }
+  
+  .turn-overlay-content {
+    padding: 2em;
+  }
+  
+  .turn-title {
+    font-size: 1.5em;
+  }
+  
+  .invite-modal-content {
+    padding: 1.875em 1.25em;
+    min-width: auto;
+  }
+  
+  .invite-code {
+    font-size: 1.25em;
   }
 }

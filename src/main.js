@@ -1,8 +1,9 @@
 // Khet - Laser Chess Main Entry Point
 
 import "./style.css"
-import { encodeState, decodeState } from './game/stateCodec.js'
+import { encodeState, decodeState, encodeFullState, decodeFullState } from './game/stateCodec.js'
 import QRCode from 'qrcode'
+import * as GameSync from './game/gameSync.js'
 
 // Direction helpers (clockwise starting at north)
 const DIRECTIONS = {
@@ -100,7 +101,26 @@ let gameState = {
   board: [],
   gameOver: false,
   winner: null,
-  actionTaken: false // Track if player has taken an action this turn
+  actionTaken: false, // Track if player has taken an action this turn
+  // Sync state embedded in game state for serialization
+  sync: {
+    redId: null,      // Client ID of red player
+    silverId: null,   // Client ID of silver player
+    lastTurnId: 0,    // Incrementing turn ID
+    turnHistory: []   // Recent turn history for summaries
+  }
+}
+
+// Sync context (local only, not serialized)
+const syncContext = {
+  enabled: false,           // Is online sync enabled?
+  serviceAvailable: false,  // Is GameSync service available?
+  sessionId: null,          // Current session ID
+  version: null,            // Current session version
+  localSide: null,          // 'red' or 'silver' - which side we're playing
+  isHost: false,            // Are we the host?
+  syncStatus: 'offline',    // 'offline', 'online', 'waiting', 'your_turn', 'opponent_turn'
+  lastSeenTurnId: 0         // Last turn ID we've acknowledged
 }
 
 let laserLayerElement = null
@@ -109,6 +129,7 @@ let listenersAttached = false
 let laserActive = false
 let isLoadingFromHash = false
 let boardResizeObserver = null
+let turnOverlayVisible = false
 
 // Dev mode: enable history-based state management for testing encoding/decoding
 // Set via URL parameter: ?dev=true or localStorage: khet-dev-mode=true
@@ -120,20 +141,273 @@ if (typeof window !== 'undefined') {
   window.DEV_MODE = DEV_MODE
 }
 
+// =============================================================================
+// TURN MANAGEMENT & SYNC HELPERS
+// =============================================================================
+
+/**
+ * Check if it's the local player's turn
+ */
+function isLocalPlayersTurn() {
+  if (!syncContext.enabled || !syncContext.localSide) {
+    return true // Local mode - always your turn
+  }
+  const localNumeric = syncContext.localSide === 'red' ? RED : SILVER
+  return gameState.currentPlayer === localNumeric
+}
+
+/**
+ * Check if it's the opponent's turn (online mode only)
+ */
+function isOpponentsTurn() {
+  if (!syncContext.enabled || !syncContext.localSide) {
+    return false
+  }
+  return !isLocalPlayersTurn()
+}
+
+/**
+ * Guard function - returns false and shows message if not local player's turn
+ */
+function ensureLocalTurn(reason = "It's not your turn yet.") {
+  if (isLocalPlayersTurn()) {
+    return true
+  }
+  showTurnBlockedToast(reason)
+  return false
+}
+
+/**
+ * Show toast when action is blocked due to turn
+ */
+function showTurnBlockedToast(message) {
+  showToast(message, 'info')
+}
+
+/**
+ * Get the current player's side name
+ */
+function getCurrentPlayerSide() {
+  return gameState.currentPlayer === RED ? 'red' : 'silver'
+}
+
+/**
+ * Get the local player's numeric ID
+ */
+function getLocalPlayerNumericId() {
+  return syncContext.localSide === 'red' ? RED : SILVER
+}
+
+/**
+ * Record a turn in history
+ */
+function recordTurn(moveData) {
+  gameState.sync.lastTurnId++
+  const turnEntry = {
+    id: gameState.sync.lastTurnId,
+    player: getCurrentPlayerSide(),
+    timestamp: Date.now(),
+    ...moveData
+  }
+  
+  // Keep only last 5 turns
+  gameState.sync.turnHistory.push(turnEntry)
+  if (gameState.sync.turnHistory.length > 5) {
+    gameState.sync.turnHistory.shift()
+  }
+  
+  return turnEntry
+}
+
+/**
+ * Get recent opponent turns we haven't seen
+ */
+function getUnseenOpponentTurns() {
+  if (!syncContext.localSide) return []
+  const opponentSide = syncContext.localSide === 'red' ? 'silver' : 'red'
+  return gameState.sync.turnHistory.filter(
+    turn => turn.player === opponentSide && turn.id > syncContext.lastSeenTurnId
+  )
+}
+
+/**
+ * Mark all turns as seen
+ */
+function markTurnsSeen() {
+  syncContext.lastSeenTurnId = gameState.sync.lastTurnId
+}
+
+/**
+ * Format a move for display
+ */
+function formatMoveDescription(turnEntry) {
+  if (!turnEntry) return ''
+  
+  const player = turnEntry.player === 'red' ? 'Red' : 'Silver'
+  let desc = `${player} `
+  
+  if (turnEntry.rotation) {
+    desc += `rotated a piece`
+  } else if (turnEntry.from && turnEntry.to) {
+    desc += `moved a piece`
+  } else {
+    desc += `made a move`
+  }
+  
+  if (turnEntry.destroyed) {
+    const destroyed = turnEntry.destroyed === 'pharaoh' ? 'Pharaoh' : 'piece'
+    desc += ` and destroyed a ${destroyed}!`
+  }
+  
+  return desc
+}
+
+/**
+ * Update sync status based on current state
+ */
+function updateSyncStatus() {
+  if (!syncContext.enabled) {
+    syncContext.syncStatus = 'offline'
+  } else if (gameState.gameOver) {
+    syncContext.syncStatus = 'online'
+  } else if (!gameState.sync.redId || !gameState.sync.silverId) {
+    syncContext.syncStatus = 'waiting'
+  } else if (isLocalPlayersTurn()) {
+    syncContext.syncStatus = 'your_turn'
+  } else {
+    syncContext.syncStatus = 'opponent_turn'
+  }
+}
+
+/**
+ * Check if board should be rotated (red player perspective)
+ */
+function shouldRotateBoard() {
+  if (syncContext.enabled && syncContext.localSide) {
+    return syncContext.localSide === 'red'
+  }
+  // In local mode, rotate when red is current player
+  return gameState.currentPlayer === RED
+}
+
+/**
+ * Transform coordinates for board rotation
+ * When rotated, (row, col) -> (7-row, 9-col)
+ */
+function transformCoords(row, col) {
+  if (shouldRotateBoard()) {
+    return { row: 7 - row, col: 9 - col }
+  }
+  return { row, col }
+}
+
+/**
+ * Inverse transform coordinates (for click handling)
+ */
+function inverseTransformCoords(row, col) {
+  if (shouldRotateBoard()) {
+    return { row: 7 - row, col: 9 - col }
+  }
+  return { row, col }
+}
+
+/**
+ * Transform facing direction for board rotation
+ * N->S, E->W, NE->SW, SE->NW, etc.
+ */
+function transformFacing(facing) {
+  if (!shouldRotateBoard()) {
+    return facing
+  }
+  
+  const facingMap = {
+    'N': 'S',
+    'S': 'N',
+    'E': 'W',
+    'W': 'E',
+    'NE': 'SW',
+    'SW': 'NE',
+    'NW': 'SE',
+    'SE': 'NW'
+  }
+  
+  return facingMap[facing] || facing
+}
+
 // Initialize the game
-function initGame(skipHash = false) {
+async function initGame(skipHash = false) {
   console.log('Initializing Khet game...')
+  
+  // Initialize GameSync service detection (non-blocking)
+  try {
+    const initPromise = GameSync.initialize()
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 2000))
+    const result = await Promise.race([initPromise, timeoutPromise])
+    
+    console.log('[GameSync] Init result:', result)
+    
+    if (result) {
+      syncContext.serviceAvailable = result.available
+      console.log('[GameSync] Service available:', result.available)
+    }
+  } catch (error) {
+    console.log('GameSync service check failed:', error)
+    syncContext.serviceAvailable = false
+  }
+  
+  // Check for session param in URL
+  const urlParams = new URLSearchParams(window.location.search)
+  const sessionParam = urlParams.get('session')
+  const roleParam = urlParams.get('role')
+  
+  if (sessionParam && syncContext.serviceAvailable) {
+    // Attempt to join existing session
+    const joined = await tryJoinSession(sessionParam, roleParam)
+    if (joined) {
+      ensureLaserLayer()
+      clearLaserLayer()
+      renderBoard()
+      setupBoardResizeObserver()
+      setupEventListeners()
+      updateSyncStatusUI()
+      maybeShowTurnOverlay()
+      console.log('Game loaded from online session!')
+      return
+    }
+    // Join failed, continue to local mode
+    showToast('Could not join session. Starting local game.', 'info')
+  } else if (syncContext.serviceAvailable && !skipHash) {
+    // Try to restore previous session from localStorage
+    const restored = await tryRestoreSync()
+    if (restored) {
+      ensureLaserLayer()
+      clearLaserLayer()
+      renderBoard()
+      setupBoardResizeObserver()
+      setupEventListeners()
+      startSyncPolling()
+      updateSyncStatusUI()
+      maybeShowTurnOverlay()
+      console.log('Restored previous online session!')
+      return
+    }
+  }
   
   // Check for state in URL hash first (unless skipping hash for reset)
   if (!skipHash) {
     const hashState = loadStateFromHash()
     if (hashState) {
       gameState = hashState
+      // Ensure sync state exists
+      if (!gameState.sync) {
+        gameState.sync = { redId: null, silverId: null, lastTurnId: 0, turnHistory: [] }
+      }
       ensureLaserLayer()
       clearLaserLayer()
       renderBoard()
       setupBoardResizeObserver()
       setupEventListeners()
+      updateSyncStatusUI()
       console.log('Game loaded from URL hash!')
       return
     }
@@ -143,6 +417,9 @@ function initGame(skipHash = false) {
   gameState.board = Array(8)
     .fill(null)
     .map(() => Array(10).fill(null))
+  
+  // Reset sync state
+  gameState.sync = { redId: null, silverId: null, lastTurnId: 0, turnHistory: [] }
   
   // Set up initial piece positions (Classic setup)
   setupClassicLayout()
@@ -160,6 +437,7 @@ function initGame(skipHash = false) {
   // Update URL hash with initial state
   updateUrlHash()
   
+  updateSyncStatusUI()
   console.log('Game initialized!')
 }
 
@@ -186,16 +464,16 @@ function setupClassicLayout() {
   // Row 3
   setPiece(3, 0, 'pyramid', RED, 'NE')
   setPiece(3, 2, 'pyramid', SILVER, 'SW')
-  setPiece(3, 4, 'scarab', SILVER, 'NE') // C/ - forward slash mirrors (NE)
-  setPiece(3, 5, 'scarab', SILVER, 'SW') // C\ - backslash mirrors (SW)
+  setPiece(3, 4, 'scarab', RED, 'NE') // C\ - faces down-left (matches classic layout)
+  setPiece(3, 5, 'scarab', RED, 'NW') // C/ - faces down-right (matches classic layout)
   setPiece(3, 7, 'pyramid', RED, 'SE')
   setPiece(3, 9, 'pyramid', SILVER, 'NW')
 
   // Row 4
   setPiece(4, 0, 'pyramid', RED, 'SE')
   setPiece(4, 2, 'pyramid', SILVER, 'NW')
-  setPiece(4, 4, 'scarab', RED, 'SW') // C\ - backslash mirrors (SW)
-  setPiece(4, 5, 'scarab', RED, 'NE') // C/ - forward slash mirrors (NE)
+  setPiece(4, 4, 'scarab', SILVER, 'NW') // C/ - faces up-right
+  setPiece(4, 5, 'scarab', SILVER, 'NE') // C\ - faces up-left
   setPiece(4, 7, 'pyramid', RED, 'NE')
   setPiece(4, 9, 'pyramid', SILVER, 'SW')
 
@@ -223,10 +501,19 @@ function renderBoard() {
     clearLaserLayer()
   }
   
+  // Apply rotation transform for red player
+  const rotate = shouldRotateBoard()
+  if (rotate) {
+    boardElement.style.transform = 'rotate(180deg)'
+  } else {
+    boardElement.style.transform = ''
+  }
+  
   for (let row = 0; row < 8; row += 1) {
     for (let col = 0; col < 10; col += 1) {
       const square = document.createElement('div')
       square.className = 'square'
+      // Store original coordinates in data attributes
       square.dataset.row = row
       square.dataset.col = col
       
@@ -247,10 +534,18 @@ function renderBoard() {
         const pieceContainer = document.createElement('div')
         pieceContainer.className = 'piece-container'
         
+        // Counter-rotate pieces so they appear upright when board is rotated
+        if (rotate) {
+          pieceContainer.style.transform = 'rotate(180deg)'
+        }
+        
         const pieceElement = document.createElement('div')
         pieceElement.className = `piece player${piece.player}`
         const isActivePlayer = piece.player === gameState.currentPlayer
-        pieceElement.innerHTML = getPieceSVG(piece, isActivePlayer)
+        
+        // Transform facing for display
+        const displayPiece = { ...piece, facing: transformFacing(piece.facing) }
+        pieceElement.innerHTML = getPieceSVG(displayPiece, isActivePlayer)
         
         pieceContainer.appendChild(pieceElement)
         square.appendChild(pieceContainer)
@@ -267,6 +562,7 @@ function renderBoard() {
     }
   }
   
+  // Update grid positioning based on display coordinates
   updateBoardDimensions()
   // Add laser tip glow for current player's sphinx
   addLaserTipGlow()
@@ -291,6 +587,9 @@ function addLaserTipGlow() {
   const squareCenter = getSquareCenter(row, col, boardRect)
   if (!squareCenter) return
   
+  // Transform facing for display when board is rotated
+  const displayFacing = transformFacing(facing)
+  
   // Calculate laser tip position based on facing direction
   // SVG size is 60px, center is 30px, tip is at center - 20 = 10px from top when facing North
   // Piece is 82% of square, so actual rendered size is 0.82 * squareSize
@@ -302,7 +601,7 @@ function addLaserTipGlow() {
   const tipOffsetRatio = (20 / 60) * 0.82 // Ratio of square size
   const tipOffsetPercentX = tipOffsetRatio * squareWidthPercent
   const tipOffsetPercentY = tipOffsetRatio * squareHeightPercent
-  const directionVector = CARDINAL_VECTORS[facing]
+  const directionVector = CARDINAL_VECTORS[displayFacing]
   const tipXPercent = squareCenter.x + directionVector.col * tipOffsetPercentX
   const tipYPercent = squareCenter.y + directionVector.row * tipOffsetPercentY
   
@@ -317,6 +616,11 @@ function addLaserTipGlow() {
   glowElement.style.height = `${glowHeightPercent}%`
   glowElement.style.left = `${tipXPercent - (glowWidthPercent / 2)}%`
   glowElement.style.top = `${tipYPercent - (glowHeightPercent / 2)}%`
+  
+  // Counter-rotate the glow when board is rotated so it stays in visual position
+  if (shouldRotateBoard()) {
+    glowElement.style.transform = 'rotate(180deg)'
+  }
   
   // Add to board
   boardElement.appendChild(glowElement)
@@ -554,6 +858,7 @@ function setupEventListeners() {
     const shareMenuBtn = document.getElementById('share-menu-btn')
     const shareMenu = document.getElementById('share-menu')
     const copyLinkBtn = document.getElementById('copy-link-btn')
+    const copySessionIdBtn = document.getElementById('copy-session-id-btn')
     const shareBtn = document.getElementById('share-btn')
     const showQrBtn = document.getElementById('show-qr-btn')
     const pasteLinkBtn = document.getElementById('paste-link-btn')
@@ -570,6 +875,12 @@ function setupEventListeners() {
     if (copyLinkBtn) {
       copyLinkBtn.addEventListener('click', () => {
         copyGameLink()
+        hideShareMenu()
+      })
+    }
+    if (copySessionIdBtn) {
+      copySessionIdBtn.addEventListener('click', () => {
+        copySessionId()
         hideShareMenu()
       })
     }
@@ -593,6 +904,53 @@ function setupEventListeners() {
     }
     if (qrCopyBtn) qrCopyBtn.addEventListener('click', copyGameLink)
     if (qrCloseBtn) qrCloseBtn.addEventListener('click', hideQRCode)
+    
+    // Online play buttons
+    const playOnlineBtn = document.getElementById('play-online-btn')
+    const inviteBtn = document.getElementById('invite-btn')
+    const leaveOnlineBtn = document.getElementById('leave-online-btn')
+    const closeInviteBtn = document.getElementById('close-invite-btn')
+    const copyCodeBtn = document.getElementById('copy-code-btn')
+    const copyInviteLinkBtn = document.getElementById('copy-invite-link-btn')
+    const startTurnBtn = document.getElementById('start-turn-btn')
+    
+    if (playOnlineBtn) {
+      playOnlineBtn.addEventListener('click', () => {
+        hideShareMenu()
+        hostOnlineGame()
+      })
+    }
+    
+    if (inviteBtn) {
+      inviteBtn.addEventListener('click', () => {
+        hideShareMenu()
+        showInviteModal()
+      })
+    }
+    
+    if (leaveOnlineBtn) {
+      leaveOnlineBtn.addEventListener('click', () => {
+        hideShareMenu()
+        disableOnlinePlay()
+        showToast('Left online game', 'info')
+      })
+    }
+    
+    if (closeInviteBtn) {
+      closeInviteBtn.addEventListener('click', hideInviteModal)
+    }
+    
+    if (copyCodeBtn) {
+      copyCodeBtn.addEventListener('click', copySessionCode)
+    }
+    
+    if (copyInviteLinkBtn) {
+      copyInviteLinkBtn.addEventListener('click', copyInviteLink)
+    }
+    
+    if (startTurnBtn) {
+      startTurnBtn.addEventListener('click', hideTurnOverlay)
+    }
     
     listenersAttached = true
   }
@@ -639,6 +997,7 @@ function hideShareMenu() {
 // Handle square clicks
 function handleSquareClick(event) {
   if (gameState.gameOver) return
+  if (!ensureLocalTurn("Wait for your opponent to finish their turn")) return
   
   const square = event.target.closest('.square')
   if (!square) {
@@ -649,6 +1008,7 @@ function handleSquareClick(event) {
     return
   }
   
+  // Get original coordinates (already stored correctly in dataset)
   const row = parseInt(square.dataset.row)
   const col = parseInt(square.dataset.col)
   const piece = gameState.board[row][col]
@@ -864,6 +1224,14 @@ function movePiece(fromRow, fromCol, toRow, toCol) {
   const piece = gameState.board[fromRow][fromCol]
   const targetPiece = gameState.board[toRow][toCol]
   
+  // Store move info for turn logging
+  const moveInfo = {
+    from: { row: fromRow, col: fromCol },
+    to: { row: toRow, col: toCol },
+    piece: piece.type,
+    swap: piece.type === 'scarab' && targetPiece
+  }
+  
   // Handle scarab swap
   if (piece.type === 'scarab' && targetPiece) {
     gameState.board[toRow][toCol] = piece
@@ -880,7 +1248,7 @@ function movePiece(fromRow, fromCol, toRow, toCol) {
   
   // Use setTimeout to ensure the DOM updates before firing laser
   setTimeout(() => {
-    handleFireLaser()
+    handleFireLaser(moveInfo)
   }, 50)
 }
 
@@ -939,28 +1307,48 @@ function rotatePiece(row, col, direction) {
   
   piece.facing = newFacing
   
+  // Store rotation info for turn logging
+  const moveInfo = {
+    rotation: true,
+    piece: piece.type,
+    from: { row, col },
+    direction: direction
+  }
+  
   // Clear selection, render the board to show the rotation, then fire laser
   clearSelection()
   renderBoard()
   
   // Use setTimeout to ensure the DOM updates before firing laser
   setTimeout(() => {
-    handleFireLaser()
+    handleFireLaser(moveInfo)
   }, 50)
 }
 
 // End current player's turn
-function endTurn() {
+function endTurn(moveInfo = null) {
   gameState.actionTaken = true
+  const previousPlayer = gameState.currentPlayer
   gameState.currentPlayer = gameState.currentPlayer === RED ? SILVER : RED
   renderBoard()
   updateUrlHash()
+  
+  // Sync if online
+  if (syncContext.enabled && moveInfo) {
+    endTurnAndSync(moveInfo)
+  }
 }
 
+// Store move info between calls (set by handleFireLaser)
+let pendingMoveInfo = null
+
 // Handle laser firing
-function handleFireLaser() {
+function handleFireLaser(moveInfo = null) {
   if (gameState.gameOver) return
   if (laserActive) return
+  
+  // Store move info for use after laser animation
+  pendingMoveInfo = moveInfo
   
   const path = computeLaserPath()
   if (!path || path.length === 0) return
@@ -975,6 +1363,10 @@ function handleFireLaser() {
   const endpoint = path[path.length - 1]
   if (endpoint.hit && endpoint.hitPiece) {
     handleLaserHit(endpoint)
+    // Add hit info to move info
+    if (pendingMoveInfo) {
+      pendingMoveInfo.destroyed = endpoint.hitPiece.type
+    }
   }
 
   if (activeLaserTimeout) {
@@ -990,12 +1382,18 @@ function handleFireLaser() {
     updateLaserTipGlow()
     if (gameState.gameOver) {
       // Show the game over overlay after a brief delay to let the laser remain visible
+      stopSyncPolling()
       setTimeout(() => {
         showGameOverOverlay()
+        // Final sync after game over
+        if (syncContext.enabled) {
+          endTurnAndSync(pendingMoveInfo)
+        }
       }, 800)
     } else {
-      endTurn()
+      endTurn(pendingMoveInfo)
     }
+    pendingMoveInfo = null
   }, LASER_DURATION)
 }
 
@@ -1224,6 +1622,8 @@ function handleLaserHit(endpoint) {
     // Overlay will be shown after the laser animation in handleFireLaser
     persistLaserPath()
     updateUrlHash()
+    // Stop polling when game ends
+    stopGameSyncPolling()
   }
 }
 
@@ -1303,6 +1703,13 @@ function ensureLaserLayer() {
     laserLayerElement = document.createElement('div')
     laserLayerElement.className = 'laser-layer'
     boardElement.insertBefore(laserLayerElement, boardElement.firstChild)
+  }
+  
+  // Counter-rotate laser layer when board is rotated
+  if (shouldRotateBoard()) {
+    laserLayerElement.style.transform = 'rotate(180deg)'
+  } else {
+    laserLayerElement.style.transform = ''
   }
 }
 
@@ -1473,11 +1880,19 @@ function confirmResetGame() {
   
   console.log('Resetting game...')
   
+  // Clear sync state
+  disableOnlinePlay()
+  
+  // Clear session_id from URL (handled by disableOnlinePlay but just in case)
+  const url = new URL(window.location.href)
+  url.searchParams.delete("session")
+  url.searchParams.delete("role")
+  
   // Clear the hash so initGame doesn't reload old state
   if (DEV_MODE) {
-    window.history.pushState(null, '', window.location.pathname + window.location.search)
+    window.history.pushState(null, '', url.pathname + url.search)
   } else {
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    window.history.replaceState(null, '', url.pathname + url.search)
   }
   
   gameState.currentPlayer = SILVER  // Silver always goes first
@@ -1530,11 +1945,15 @@ function hideGameOverOverlay() {
 function handlePlayAgain() {
   hideGameOverOverlay()
   
+  // Clear sync state
+  disableOnlinePlay()
+  
   // Clear the hash so initGame doesn't reload old state
+  const url = new URL(window.location.href)
   if (DEV_MODE) {
-    window.history.pushState(null, '', window.location.pathname + window.location.search)
+    window.history.pushState(null, '', url.pathname + url.search)
   } else {
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    window.history.replaceState(null, '', url.pathname + url.search)
   }
   
   // Reset game state
@@ -1560,30 +1979,626 @@ function handlePlayAgain() {
   updateLaserTipGlow() // Ensure laser tip glow reflects new current player
 }
 
+// =============================================================================
+// SESSION MANAGEMENT & ONLINE PLAY
+// =============================================================================
+
+/**
+ * Try to join an existing session
+ */
+async function tryJoinSession(sessionCode, roleHint) {
+  try {
+    const fullSessionId = GameSync.normalizeSessionId(sessionCode)
+    const session = await GameSync.loadSession(fullSessionId)
+    
+    // Decode state
+    const decoded = decodeFullState(session.state_blob)
+    gameState = decoded
+    
+    // Determine our role
+    const myId = GameSync.getClientId()
+    
+    // Check if we're already assigned
+    if (gameState.sync.redId === myId) {
+      syncContext.localSide = 'red'
+      syncContext.isHost = true
+    } else if (gameState.sync.silverId === myId) {
+      syncContext.localSide = 'silver'
+      syncContext.isHost = false
+    } else if (roleHint === 'red' && !gameState.sync.redId) {
+      // Reconnecting as host
+      gameState.sync.redId = myId
+      syncContext.localSide = 'red'
+      syncContext.isHost = true
+    } else if (!gameState.sync.silverId) {
+      // Join as silver (guest)
+      gameState.sync.silverId = myId
+      syncContext.localSide = 'silver'
+      syncContext.isHost = false
+    } else if (!gameState.sync.redId) {
+      // Rare case: silver joined but red left
+      gameState.sync.redId = myId
+      syncContext.localSide = 'red'
+      syncContext.isHost = true
+    } else {
+      // Both seats taken and we're not one of them
+      showToast('Game is full - both players already joined', 'error')
+      return false
+    }
+    
+    // Update sync context
+    syncContext.enabled = true
+    syncContext.sessionId = fullSessionId
+    
+    // Push our assignment
+    await pushSyncState()
+    
+    // Update URL
+    const url = new URL(window.location.href)
+    url.searchParams.set('session', GameSync.trimSessionId(fullSessionId))
+    url.searchParams.set('role', syncContext.localSide)
+    url.hash = ''
+    window.history.replaceState(null, '', url.toString())
+    
+    // Start polling
+    startSyncPolling()
+    
+    console.log(`Joined session as ${syncContext.localSide}`)
+    return true
+  } catch (error) {
+    console.error('Failed to join session:', error)
+    if (error.type === 'not_found') {
+      showToast('Session not found or expired', 'error')
+    }
+    return false
+  }
+}
+
+/**
+ * Host a new online game
+ */
+async function hostOnlineGame() {
+  if (!syncContext.serviceAvailable) {
+    showToast('Online play unavailable', 'error')
+    return false
+  }
+  
+  try {
+    const myId = GameSync.getClientId()
+    
+    // Reset game state
+    gameState.currentPlayer = SILVER
+    gameState.selectedPiece = null
+    gameState.selectedSquare = null
+    gameState.gameOver = false
+    gameState.winner = null
+    gameState.actionTaken = false
+    gameState.board = Array(8).fill(null).map(() => Array(10).fill(null))
+    gameState.sync = {
+      redId: myId,
+      silverId: null,
+      lastTurnId: 0,
+      turnHistory: []
+    }
+    
+    setupClassicLayout()
+    
+    // Encode and create session
+    const encoded = encodeFullState(gameState)
+    const session = await GameSync.createSession(encoded, {
+      created_at: new Date().toISOString(),
+      host: myId
+    })
+    
+    // Update sync context
+    syncContext.enabled = true
+    syncContext.sessionId = session.session_id
+    syncContext.localSide = 'red'
+    syncContext.isHost = true
+    
+    // Update URL
+    const url = new URL(window.location.href)
+    url.searchParams.set('session', GameSync.trimSessionId(session.session_id))
+    url.searchParams.set('role', 'red')
+    url.hash = ''
+    window.history.replaceState(null, '', url.toString())
+    
+    // Re-render
+    ensureLaserLayer()
+    clearLaserLayer()
+    renderBoard()
+    
+    // Start polling
+    startSyncPolling()
+    
+    // Show invite modal
+    showInviteModal()
+    
+    updateSyncStatusUI()
+    console.log('Hosted new game:', session.session_id)
+    return true
+  } catch (error) {
+    console.error('Failed to host game:', error)
+    showToast('Failed to start online game', 'error')
+    return false
+  }
+}
+
+/**
+ * Push current state to server
+ */
+async function pushSyncState() {
+  if (!syncContext.enabled || !syncContext.sessionId) return
+  
+  try {
+    const encoded = encodeFullState(gameState)
+    const result = await GameSync.updateSession(encoded)
+    
+    if (result && result.type === 'conflict') {
+      // Handle conflict
+      const remoteState = decodeFullState(result.current.state_blob)
+      gameState = remoteState
+      renderBoard()
+      updateSyncStatusUI()
+      showToast('Game was updated by opponent', 'info')
+    }
+    
+    // Save sync storage for reconnect
+    saveSyncStorage()
+  } catch (error) {
+    console.error('Failed to push sync state:', error)
+  }
+}
+
+/**
+ * Start polling for sync updates
+ */
+function startSyncPolling() {
+  if (!syncContext.enabled || gameState.gameOver) return
+  
+  GameSync.startPolling((session, error) => {
+    if (error) {
+      if (error.type === 'not_found') {
+        showToast('Session ended', 'info')
+        disableOnlinePlay()
+      }
+      return
+    }
+    
+    try {
+      const remoteState = decodeFullState(session.state_blob)
+      
+      // Check if opponent joined
+      const wasWaiting = !gameState.sync.silverId && syncContext.isHost
+      const opponentJoined = wasWaiting && remoteState.sync.silverId
+      
+      // Check for new turns
+      const newTurns = remoteState.sync.lastTurnId > gameState.sync.lastTurnId
+      
+      // Update state
+      gameState = remoteState
+      
+      if (opponentJoined) {
+        showToast('Opponent joined the game!', 'success')
+        hideInviteModal()
+      }
+      
+      if (newTurns && isOpponentsTurn() === false) {
+        // It just became our turn
+        showTurnStartOverlay()
+      }
+      
+      updateSyncStatusUI()
+      renderBoard()
+    } catch (error) {
+      console.error('Failed to process sync update:', error)
+    }
+  })
+}
+
+/**
+ * Stop sync polling
+ */
+function stopSyncPolling() {
+  GameSync.stopPolling()
+}
+
+/**
+ * Disable online play (return to local mode)
+ */
+function disableOnlinePlay() {
+  syncContext.enabled = false
+  syncContext.sessionId = null
+  syncContext.localSide = null
+  syncContext.isHost = false
+  syncContext.syncStatus = 'offline'
+  
+  GameSync.clearSession()
+  clearSyncStorage()
+  
+  // Clear URL params
+  const url = new URL(window.location.href)
+  url.searchParams.delete('session')
+  url.searchParams.delete('role')
+  window.history.replaceState(null, '', url.toString())
+  
+  updateSyncStatusUI()
+}
+
+/**
+ * Save sync context to localStorage for reconnect
+ */
+function saveSyncStorage() {
+  if (!syncContext.enabled) return
+  
+  try {
+    const data = {
+      sessionId: syncContext.sessionId,
+      localSide: syncContext.localSide,
+      isHost: syncContext.isHost,
+      version: GameSync.getVersion(),
+      savedAt: Date.now()
+    }
+    localStorage.setItem('khet_sync_session', JSON.stringify(data))
+  } catch (error) {
+    console.warn('Failed to save sync storage:', error)
+  }
+}
+
+/**
+ * Clear sync storage
+ */
+function clearSyncStorage() {
+  try {
+    localStorage.removeItem('khet_sync_session')
+  } catch (error) {
+    // Ignore
+  }
+}
+
+/**
+ * Try to restore sync context from localStorage
+ */
+async function tryRestoreSync() {
+  try {
+    const stored = localStorage.getItem('khet_sync_session')
+    if (!stored) return false
+    
+    const data = JSON.parse(stored)
+    
+    // Check if session is too old (1 hour)
+    const age = Date.now() - data.savedAt
+    if (age > 60 * 60 * 1000) {
+      clearSyncStorage()
+      return false
+    }
+    
+    // Check URL for matching session
+    const urlParams = new URLSearchParams(window.location.search)
+    const urlSession = urlParams.get('session')
+    
+    // Only restore if URL matches or no URL session
+    if (urlSession && GameSync.normalizeSessionId(urlSession) !== GameSync.normalizeSessionId(data.sessionId)) {
+      // Different session in URL - don't restore
+      return false
+    }
+    
+    // Try to load the session
+    const session = await GameSync.loadSession(data.sessionId)
+    const decoded = decodeFullState(session.state_blob)
+    
+    // Verify we're still assigned
+    const myId = GameSync.getClientId()
+    if (decoded.sync.redId !== myId && decoded.sync.silverId !== myId) {
+      // We're not in this session anymore
+      clearSyncStorage()
+      return false
+    }
+    
+    // Restore state
+    gameState = decoded
+    syncContext.enabled = true
+    syncContext.sessionId = data.sessionId
+    syncContext.localSide = data.localSide
+    syncContext.isHost = data.isHost
+    
+    // Update URL
+    const url = new URL(window.location.href)
+    url.searchParams.set('session', GameSync.trimSessionId(data.sessionId))
+    url.searchParams.set('role', syncContext.localSide)
+    url.hash = ''
+    window.history.replaceState(null, '', url.toString())
+    
+    console.log('Restored sync session:', data.sessionId)
+    return true
+  } catch (error) {
+    console.warn('Failed to restore sync:', error)
+    clearSyncStorage()
+    return false
+  }
+}
+
+/**
+ * End turn and push state
+ */
+async function endTurnAndSync(moveData) {
+  if (syncContext.enabled) {
+    // Record the turn
+    recordTurn(moveData)
+    
+    // Flip to next player (already done in game logic)
+    
+    // Push to server
+    await pushSyncState()
+    
+    updateSyncStatusUI()
+    
+    // Show waiting state if online
+    if (!gameState.gameOver) {
+      maybeShowWaitingState()
+    }
+  }
+}
+
+// =============================================================================
+// SYNC UI - STATUS BADGES & OVERLAYS
+// =============================================================================
+
+/**
+ * Update all sync status UI elements
+ */
+function updateSyncStatusUI() {
+  updateSyncStatus()
+  updateSyncBadge()
+  updateShareMenuOnlineOptions()
+}
+
+/**
+ * Update sync status badge
+ */
+function updateSyncBadge() {
+  const indicator = document.getElementById('sync-indicator')
+  if (!indicator) return
+  
+  if (!syncContext.enabled) {
+    indicator.classList.add('hidden')
+    return
+  }
+  
+  indicator.classList.remove('hidden')
+  
+  // Update text and style based on status
+  switch (syncContext.syncStatus) {
+    case 'waiting':
+      indicator.textContent = '⏳ Waiting'
+      indicator.className = 'sync-indicator sync-waiting'
+      break
+    case 'your_turn':
+      indicator.textContent = '✨ Your turn'
+      indicator.className = 'sync-indicator sync-your-turn'
+      break
+    case 'opponent_turn':
+      indicator.textContent = '⌛ Opponent'
+      indicator.className = 'sync-indicator sync-opponent-turn'
+      break
+    default:
+      indicator.textContent = '🔗 Online'
+      indicator.className = 'sync-indicator sync-online'
+  }
+}
+
+/**
+ * Update share menu online-specific options
+ */
+function updateShareMenuOnlineOptions() {
+  const playOnlineBtn = document.getElementById('play-online-btn')
+  const inviteBtn = document.getElementById('invite-btn')
+  const copySessionBtn = document.getElementById('copy-session-id-btn')
+  const leaveGameBtn = document.getElementById('leave-online-btn')
+  
+  if (syncContext.enabled) {
+    if (playOnlineBtn) playOnlineBtn.classList.add('hidden')
+    if (inviteBtn) inviteBtn.classList.remove('hidden')
+    if (copySessionBtn) copySessionBtn.classList.remove('hidden')
+    if (leaveGameBtn) leaveGameBtn.classList.remove('hidden')
+  } else {
+    if (playOnlineBtn && syncContext.serviceAvailable) {
+      playOnlineBtn.classList.remove('hidden')
+    }
+    if (inviteBtn) inviteBtn.classList.add('hidden')
+    if (copySessionBtn) copySessionBtn.classList.add('hidden')
+    if (leaveGameBtn) leaveGameBtn.classList.add('hidden')
+  }
+}
+
+/**
+ * Show turn start overlay
+ */
+function showTurnStartOverlay() {
+  const overlay = document.getElementById('turn-overlay')
+  if (!overlay) return
+  
+  // Get recent opponent moves
+  const unseenTurns = getUnseenOpponentTurns()
+  const summaryEl = overlay.querySelector('.turn-summary')
+  
+  if (summaryEl && unseenTurns.length > 0) {
+    const lastTurn = unseenTurns[unseenTurns.length - 1]
+    summaryEl.textContent = formatMoveDescription(lastTurn)
+    summaryEl.classList.remove('hidden')
+  } else if (summaryEl) {
+    summaryEl.classList.add('hidden')
+  }
+  
+  const titleEl = overlay.querySelector('.turn-title')
+  if (titleEl) {
+    titleEl.textContent = "It's your turn!"
+  }
+  
+  overlay.classList.remove('hidden')
+  turnOverlayVisible = true
+}
+
+/**
+ * Hide turn overlay
+ */
+function hideTurnOverlay() {
+  const overlay = document.getElementById('turn-overlay')
+  if (overlay) {
+    overlay.classList.add('hidden')
+  }
+  turnOverlayVisible = false
+  markTurnsSeen()
+}
+
+/**
+ * Maybe show turn overlay on page load
+ */
+function maybeShowTurnOverlay() {
+  if (!syncContext.enabled) return
+  if (gameState.gameOver) return
+  
+  if (isLocalPlayersTurn()) {
+    const unseenTurns = getUnseenOpponentTurns()
+    if (unseenTurns.length > 0) {
+      showTurnStartOverlay()
+    }
+  }
+}
+
+/**
+ * Show waiting state (opponent's turn)
+ */
+function maybeShowWaitingState() {
+  if (!syncContext.enabled) return
+  if (isLocalPlayersTurn()) return
+  
+  // Could show a subtle waiting indicator
+  // For now just update the badge
+  updateSyncBadge()
+}
+
+// =============================================================================
+// INVITE MODAL
+// =============================================================================
+
+/**
+ * Show invite modal with QR and links
+ */
+function showInviteModal() {
+  const modal = document.getElementById('invite-modal')
+  if (!modal) return
+  
+  const sessionId = GameSync.getSessionId()
+  const shareUrl = GameSync.getSessionUrl('silver')
+  const sessionCode = GameSync.trimSessionId(sessionId)
+  
+  // Update modal content
+  const codeEl = modal.querySelector('.invite-code')
+  if (codeEl) codeEl.textContent = sessionCode
+  
+  const linkEl = modal.querySelector('.invite-link')
+  if (linkEl) linkEl.value = shareUrl
+  
+  // Generate QR code
+  const qrEl = modal.querySelector('.invite-qr')
+  if (qrEl && shareUrl) {
+    QRCode.toCanvas(qrEl, shareUrl, {
+      width: 180,
+      margin: 2,
+      color: { dark: '#ffffff', light: '#1a1a2e' }
+    }).catch(err => console.error('QR generation failed:', err))
+  }
+  
+  modal.classList.remove('hidden')
+}
+
+/**
+ * Hide invite modal
+ */
+function hideInviteModal() {
+  const modal = document.getElementById('invite-modal')
+  if (modal) modal.classList.add('hidden')
+}
+
+/**
+ * Copy invite link
+ */
+function copyInviteLink() {
+  const shareUrl = GameSync.getSessionUrl('silver')
+  if (!shareUrl) return
+  
+  navigator.clipboard.writeText(shareUrl).then(() => {
+    showToast('Invite link copied!', 'success')
+  }).catch(() => {
+    // Fallback
+    const input = document.createElement('input')
+    input.value = shareUrl
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    showToast('Invite link copied!', 'success')
+  })
+}
+
+/**
+ * Copy session code
+ */
+function copySessionCode() {
+  const sessionId = GameSync.getSessionId()
+  if (!sessionId) return
+  
+  const code = GameSync.trimSessionId(sessionId)
+  navigator.clipboard.writeText(code).then(() => {
+    showToast('Session code copied!', 'success')
+  }).catch(() => {
+    showToast('Failed to copy', 'error')
+  })
+}
+
+/**
+ * Legacy function for backwards compatibility
+ */
+function copySessionId() {
+  copyInviteLink()
+}
+
+/**
+ * Sync current state to GameSync (called from updateUrlHash)
+ */
+async function syncToGameSync() {
+  if (!syncContext.enabled) return
+  await pushSyncState()
+}
+
 // URL Hash Management
-function updateUrlHash() {
+async function updateUrlHash() {
   try {
     const encoded = encodeState(gameState)
     const hash = `#v=1.s=${encoded}`
     
-    if (DEV_MODE && !isLoadingFromHash) {
-      // Dev mode: use pushState to create history entries (allows undo via back button)
-      window.history.pushState({ gameState }, '', hash)
-      console.log('[DEV MODE] State saved to history, hash updated')
-      
-      // Re-render from hash to verify encoding/decoding works
-      setTimeout(() => {
-        isLoadingFromHash = true
-        const hashState = loadStateFromHash()
-        if (hashState) {
-          console.log('[DEV MODE] Re-rendering from hash to verify encoding/decoding')
-          loadGameState(hashState)
-        }
-        isLoadingFromHash = false
-      }, 100)
-    } else {
-      // Normal mode: use replaceState (no history entries)
-      window.history.replaceState(null, '', hash)
+    // Only update hash if not in online mode (online uses URL params)
+    if (!syncContext.enabled) {
+      if (DEV_MODE && !isLoadingFromHash) {
+        // Dev mode: use pushState to create history entries (allows undo via back button)
+        window.history.pushState({ gameState }, '', hash)
+        console.log('[DEV MODE] State saved to history, hash updated')
+        
+        // Re-render from hash to verify encoding/decoding works
+        setTimeout(() => {
+          isLoadingFromHash = true
+          const hashState = loadStateFromHash()
+          if (hashState) {
+            console.log('[DEV MODE] Re-rendering from hash to verify encoding/decoding')
+            loadGameState(hashState)
+          }
+          isLoadingFromHash = false
+        }, 100)
+      } else {
+        // Normal mode: use replaceState (no history entries)
+        window.history.replaceState(null, '', hash)
+      }
     }
   } catch (error) {
     console.error('Failed to update URL hash:', error)
