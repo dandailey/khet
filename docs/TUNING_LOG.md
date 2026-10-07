@@ -54,3 +54,18 @@ tempo (5 -> 23), exposure terms, and makes scarab mobility strongly negative. Wo
 reflect the weak 2,000-node generator, so the fit learns that generator's weaknesses (positions with hanging
 pieces lose at depth 2 but are defensible for a deeper search). Default parameters stay. Next: game-based tuning
 (SPSA) on a few scalars at the target search depth, as a long background job.
+
+## 2026-10-07 — Level calibration, round 1 (initial level table)
+
+Adjacent-level matches, 2 workers, loaded host (`tools/calibrate-levels.sh`):
+
+| Pair | Games | W/D/L (higher level first) | Elo |
+|---|---|---|---|
+| L2 vs L1 | 60 | 51/9/0 | +436 [311, 569] |
+| L3 vs L2 | 60 | 53/1/6 | +366 [251, 514] |
+| L4 vs L3 | 40 | 40/0/0 | >= +399 |
+| L5 vs L4 | 30 | 20/3/7 | +161 [24, 317] |
+
+Problems: steps are too large at the bottom, and L3 is crippled: its softmax noise uses full-window root
+scoring of every root move, so at 300 ms it averaged depth 2.1 vs L4's 3.6. Fix: cheap root noise (a seeded
+per-root-move score offset applied inside the normal search), then recalibrate.
