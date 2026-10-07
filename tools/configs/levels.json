@@ -1,0 +1,6 @@
+{
+  "levels":[
+    {"level":1,"label":"Random","player":"random","nodes":1000},
+    {"level":2,"label":"Greedy","player":"greedy","nodes":1000}
+  ]
+}
