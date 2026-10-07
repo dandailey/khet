@@ -1,8 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ANUBIS, MATE, MAX_MOVES, PHARAOH, PYRAMID, RED, SCARAB, SILVER, SPHINX, applyMove, bestMove, fromPieces, newGame, parseMove, toKFEN } from '../src/index.ts';
-import { fromTableScore, toTableScore } from '../src/search.ts';
+import { TranspositionTable, fromTableScore, toTableScore } from '../src/search.ts';
 import { piece as p, randomPositions } from './ai-fixtures.ts';
+
+test('TT hash replacement invalidates evaluation and tactical caches together', () => {
+  const tt = new TranspositionTable(2);
+  tt.cacheEvaluation(11, 22, 77); tt.cacheTactical(11, 22, -1, false);
+  assert.equal(tt.evaluation(11, 22), 77);
+  assert.ok(tt.tactical(11, 22) >= 0);
+  tt.store(12, 23, 0, 4, 9, 123, 1, 0);
+  assert.equal(tt.evaluation(11, 22), null); assert.equal(tt.tactical(11, 22), -1);
+  tt.cacheEvaluation(12, 23, 88); tt.cacheTactical(12, 23, -1, true);
+  const entry = tt.probe(12, 23, 0), tactical = tt.tactical(12, 23);
+  assert.ok(entry >= 0); assert.ok(tactical >= 0);
+  assert.equal(tt.scores[entry], 9); assert.equal(tt.moves[entry], 123);
+  assert.equal(tt.evaluation(12, 23), 88); assert.equal(tt.threats[tactical], 1);
+  tt.store(12, 23, 0, 2, 5, 124, 1, 0);
+  assert.equal(tt.depths[entry], 4); assert.equal(tt.moves[entry], 123);
+});
 
 test('Search takes wins in one: direct Sphinx rotation, pyramid reflection, scarab reflection', () => {
   const cases = [

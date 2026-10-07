@@ -14,6 +14,9 @@ test('500 random positions: changed shots are beam-relevant; win-in-one equals e
     const beam = new Int32Array(MAX_MOVES), all = new Int32Array(MAX_MOVES);
     const relevant = new Set(beam.subarray(0, pos.generateBeamMoves(color, beam)));
     const base = pos.traceLaser(color), count = pos.generateMovesFor(color, all);
+    const path = new Set(base.path);
+    assert.deepEqual(relevant, new Set(Array.from(all.subarray(0, count)).filter(move =>
+      path.has(move & 127) || path.has((move >>> 7) & 127))));
     const mover = fromPieces(pieces, color);
     let win = false;
     for (let i = 0; i < count; i++) {
