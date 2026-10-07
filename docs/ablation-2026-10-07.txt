@@ -1,0 +1,7 @@
+noHanging: Final: 150 games / 75 pairs: 44/34/72 W/D/L; paired Elo -65.6 (95% [-111.4, -20.3]); LOS 0.2%
+q2: Final: 150 games / 75 pairs: 56/39/55 W/D/L; paired Elo 2.3 (95% [-47.7, 52.2]); LOS 53.7%
+q1: Final: 150 games / 75 pairs: 60/21/69 W/D/L; paired Elo -20.9 (95% [-76.4, 34.4]); LOS 22.8%
+noThreatExt: Final: 150 games / 75 pairs: 62/24/64 W/D/L; paired Elo -4.6 (95% [-52.2, 44.0]); LOS 42.4%
+noLmr: Final: 150 games / 75 pairs: 61/19/70 W/D/L; paired Elo -20.9 (95% [-70.5, 28.6]); LOS 20.2%
+nullMove: Final: 150 games / 75 pairs: 60/24/66 W/D/L; paired Elo -13.9 (95% [-68.5, 40.4]); LOS 30.7%
+noQsearch: Final: 150 games / 75 pairs: 60/17/73 W/D/L; paired Elo -30.2 (95% [-85.1, 24.3]); LOS 13.7%

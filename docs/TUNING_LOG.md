@@ -1,0 +1,27 @@
+# Tuning Log
+
+## 2026-10-07 — Feature ablations (time-based)
+
+Setup: each variant vs the default engine, 100 ms per move, ttSize 65536, 150 games (75 opening pairs, colours
+reversed), `tools/ablate.sh`, engine commit d9a6542 (post speed pass 1). The host was heavily loaded (load
+average 5-11 on 4 cores), so 100 ms under load is roughly 20-30 ms of quiet search (depth 2-3).
+
+| Variant | Elo vs default (95% interval) | Decision |
+|---|---|---|
+| hangingPieces off | -65.6 [-111.4, -20.3] | keep hanging-piece term (significant) |
+| qDepth 2 (default 4) | +2.3 [-47.7, 52.2] | no measurable difference; keep 4 |
+| qDepth 1 | -20.9 [-76.4, 34.4] | keep 4 |
+| threatExtension off | -4.6 [-52.2, 44.0] | inconclusive; keep on (safety rationale), retest at longer time |
+| LMR off | -20.9 [-70.5, 28.6] | keep LMR on |
+| nullMove on | -13.9 [-68.5, 40.4] | keep off |
+| qsearch off | -30.2 [-85.1, 24.3] | keep on |
+
+Only the hanging-piece result is significant at this sample size. Revisit the others at longer time controls
+once the evaluation is tuned.
+
+## 2026-10-07 — Speed pass 2 rejected
+
+GPT speed pass 2 (single preview pass per node, shotAfter, lazy threat cache) gave identical search results and
+no speedup in an interleaved A/B (depth 3 on 10 openings: ~4.5-6.7 s both). Diff archived outside the repo
+(~/projects/khet-recovery/rejected/speed-pass-2.diff). Quiet-host speed: ~100k nodes/s; evaluation is ~30% of
+time.
