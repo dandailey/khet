@@ -1,5 +1,6 @@
 import { bestMove, fromKFEN, newGame, parseMove } from './index.ts';
 import type { SearchOptions, SearchResult } from './types.ts';
+import { levelOptions } from './levels.ts';
 
 export function parseGo(tokens: string[]): SearchOptions {
   const options: SearchOptions = {};
@@ -8,7 +9,7 @@ export function parseGo(tokens: string[]): SearchOptions {
     const value = Number(tokens[i + 1]);
     if (!Number.isSafeInteger(value) || value < 1) throw new Error('Invalid go option value');
     switch (tokens[i]) {
-      case 'level': options.level = value; break;
+      case 'level': levelOptions(value); options.level = value; break;
       case 'movetime': options.timeMs = value; break;
       case 'depth': if (value > 64) throw new Error('Maximum search depth is 64'); options.depth = value; break;
       case 'nodes': options.nodes = value; break;
@@ -78,9 +79,9 @@ export class KEIController {
     const tokens = line.trim().split(/\s+/), command = tokens.shift();
     if (command === 'go') {
       try {
-        parseGo(tokens);
+        const options = parseGo(tokens);
         this.cancel(false);
-        this.lastMove = bestMove(this.session.position, { nodes: 1, tt: false }).move || '(none)';
+        this.lastMove = bestMove(this.session.position, { ...options, nodes: 1, tt: false }).move || '(none)';
         const generation = ++this.generation;
         this.job = this.spawn({ positionLine: this.session.positionLine, goLine: line }, output => {
           if (generation !== this.generation) return;

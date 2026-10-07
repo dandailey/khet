@@ -14,13 +14,16 @@ export interface SearchOptions {
   tt?: boolean; ttSize?: number;
   nullMove?: boolean; lmr?: boolean; qsearch?: boolean; threatExtension?: boolean;
   qDepth?: number;
+  /** Score every root move with a full window in each completed iteration. */
+  rootScores?: boolean;
   /** Expensive one-move victim evaluation; default on, for self-play ablation. */
   hangingPieces?: boolean;
   /** Shared flag allows stop from another worker while synchronous search runs. */
   stop?: Int32Array;
   onIteration?: (result: SearchResult) => void;
 }
-export interface SearchResult { move: string; score: number; depth: number; nodes: number; pv: string[]; timeMs: number }
+export interface RootScore { move: string; score: number }
+export interface SearchResult { move: string; score: number; depth: number; nodes: number; pv: string[]; timeMs: number; rootScores?: RootScore[] }
 export function opposite(d: number): number { return (d + 2) & 3; }
 export function encodePiece(type: number, color: Color, o: number): number {
   return type | (color << 3) | (o << 4);

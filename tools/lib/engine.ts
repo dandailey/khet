@@ -17,6 +17,7 @@ export interface Position {
   hasWinInOne?(color: number): boolean;
 }
 export interface SearchOptions {
+  level?: number;
   depth?: number; timeMs?: number; nodes?: number; seed?: number; params?: Params;
   [name: string]: unknown;
 }

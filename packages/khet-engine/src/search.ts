@@ -3,7 +3,7 @@ import { moveToString } from './notation.ts';
 import type { Position } from './position.ts';
 import { SIDE_HI, SIDE_LO } from './zobrist.ts';
 import { ANUBIS, MAX_MOVES, PHARAOH, PYRAMID, pieceColor, pieceType } from './types.ts';
-import type { Color, SearchOptions, SearchResult } from './types.ts';
+import type { Color, RootScore, SearchOptions, SearchResult } from './types.ts';
 
 export const MATE = 100000;
 const MATE_BOUND = 99000, INF = 100001, MAX_PLY = 128;
@@ -319,10 +319,32 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
   if (fallback < 0) return completed;
   // A tiny limit still receives an immediate win or a safe fallback.
   const immediate = pos.findWinInOne(pos.side);
-  if (immediate >= 0) { nodes = 1; return result(immediate, MATE - 1, 1, [immediate]); }
+  if (immediate >= 0 && !options.rootScores) { nodes = 1; return result(immediate, MATE - 1, 1, [immediate]); }
   for (let depth = 1; depth <= maxDepth; depth++) {
     let window = depth === 1 ? INF * 2 : 20;
     try {
+      if (options.rootScores) {
+        const rootScores: RootScore[] = [];
+        let best = -INF, bestLine: number[] = [];
+        pathLo[0] = pos.hash[0]; pathHi[0] = pos.hash[1];
+        // No root pruning, aspiration window, or root tactical shortcut: each
+        // legal move gets a full-window score at the same completed depth.
+        for (let i = 0; i < count; i++) {
+          const move = rootMoves[i];
+          pos.makeMove(move);
+          let score: number, line: number[];
+          try {
+            score = -negamax(depth - 1, -INF, INF, 1, 0, qcap);
+            line = [move, ...pv.subarray(pvOffsets[1], pvOffsets[1] + pvLengths[1])];
+          } finally { pos.unmakeMove(); }
+          rootScores.push({ move: moveToString(move, position), score });
+          if (score > best) { best = score; bestLine = line; }
+        }
+        completed = { ...result(bestLine[0], best, depth, bestLine), rootScores };
+        options.onIteration?.(completed);
+        if (Math.abs(best) >= MATE_BOUND || performance.now() >= deadline || nodes >= maxNodes) break;
+        continue;
+      }
       let score: number;
       while (true) {
         const alpha = window >= INF ? -INF : Math.max(-INF, completed.score - window);
