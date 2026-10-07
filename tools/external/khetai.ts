@@ -80,6 +80,9 @@ export class KhetaiClient {
   }
 }
 let client: KhetaiClient | undefined;
-export function khetaiMoveResult(pos: Position, options: KhetaiOptions): SearchResult { return (client ??= new KhetaiClient()).moveResult(pos, options); }
+export function khetaiMoveResult(pos: Position, options: KhetaiOptions): SearchResult {
+  try { return (client ??= new KhetaiClient()).moveResult(pos, options); }
+  catch (error) { client = undefined; throw error; } // a timed-out client is closed; the next call starts a fresh CLI
+}
 export function khetaiMove(pos: Position, options: KhetaiOptions): string { return khetaiMoveResult(pos, options).move; }
 export function closeKhetai(): void { client?.close(); client = undefined; }

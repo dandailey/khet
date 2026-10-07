@@ -15,7 +15,7 @@ export interface GameResult {
   id: number; pair: number; opening: string;
   colours: { silver: string; red: string; a: 'silver' | 'red' };
   result: 'A' | 'B' | 'draw'; scoreA: number;
-  plies: number; termination: 'pharaoh' | 'threefold' | 'ply-cap' | 'no-moves' | 'engine-draw' | 'illegal-move';
+  plies: number; termination: 'pharaoh' | 'threefold' | 'ply-cap' | 'no-moves' | 'engine-draw' | 'illegal-move' | 'time-forfeit';
   illegalMove?: { move: string; kfen: string; player: string };
   stats: { A: SideMetrics; B: SideMetrics };
   backend: string; seed: number;
@@ -42,8 +42,19 @@ export async function playGame(task: GameTask, suppliedEngine?: Awaited<ReturnTy
     const index = pos.side === colourA ? 0 : 1;
     const config = index === 0 ? task.a : task.b;
     const opts = { ...searchOptions(config), seed: seedFor(task.seed, task.pair, task.aSilver ? 0 : 1, plies) };
-    const result = config.player === 'khetai'
-      ? externalMove(pos, { depth: opts.depth ?? 25, timeMs: opts.timeMs! })
+    let external: ReturnType<typeof externalMove> | undefined;
+    if (config.player === 'khetai') {
+      // khetai checks its clock only between iterations; a runaway iteration is a time forfeit.
+      try { external = externalMove(pos, { depth: opts.depth ?? 25, timeMs: opts.timeMs! }); }
+      catch (error) {
+        if (!(error instanceof Error) || !/timed out/.test(error.message)) throw error;
+        termination = 'time-forfeit';
+        forfeitWinner = pos.side === engine.SILVER ? engine.RED : engine.SILVER;
+        break;
+      }
+    }
+    const result = external
+      ? external
       : config.player === 'random' || config.player === 'greedy'
       ? stubMove(engine, pos, opts, config.player)
       : engine.bestMove ? engine.bestMove(pos, opts) : stubMove(engine, pos, opts, 'greedy');
