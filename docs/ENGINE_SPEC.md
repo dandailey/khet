@@ -126,9 +126,36 @@ row 6: sP↗(6,7)
 row 7: sP↖(7,2) sA↑(7,3) sF(7,4) sA↑(7,5) sS↑(7,9)
 ```
 
-### Imhotep, Dynasty
-To be added from the rules research (`docs/RULES_RESEARCH.md`) once cross-checked. The engine exposes
-`SETUPS` keyed by name and must not hard-code Classic.
+### Imhotep and Dynasty (from two independent open-source implementations that agree cell by cell;
+see `docs/RULES_RESEARCH.md` section 2; to be eyeballed against the physical set)
+```
+Imhotep
+row 0: rS↓(0,0) rA↓(0,4) rF(0,5) rA↓(0,6) rC/(0,7)
+row 2: sP↖(2,3) rP↗(2,6)
+row 3: rP↗(3,0) sP↙(3,1) sP↘(3,4) rC/(3,5) rP↘(3,8) sP↖(3,9)
+row 4: rP↘(4,0) sP↖(4,1) sC/(4,4) rP↖(4,5) rP↗(4,8) sP↙(4,9)
+row 5: sP↙(5,3) rP↘(5,6)
+row 7: sC/(7,2) sA↑(7,3) sF(7,4) sA↑(7,5) sS↑(7,9)
+
+Dynasty
+row 0: rS↓(0,0) rP↙(0,4) rA↓(0,5) rP↘(0,6)
+row 1: rF(1,5)
+row 2: rP↗(2,0) rP↙(2,4) rA↓(2,5) rC/(2,6)
+row 3: rP↘(3,0) rC\(3,2) sP↖(3,4) sP↘(3,6)
+row 4: rP↖(4,3) rP↘(4,5) sC\(4,7) sP↖(4,9)
+row 5: sC/(5,3) sA↑(5,4) sP↗(5,5) sP↙(5,9)
+row 6: sF(6,4)
+row 7: sP↖(7,3) sA↑(7,4) sP↗(7,5) sS↑(7,9)
+```
+
+### Rules decisions where sources disagree (Khet SME, 2026-10-07)
+- Scarab swap that would put either piece on a square reserved for the other color: illegal (matches
+  alaingilbert/khet; rel1c allows it). Section 4.2.
+- Sphinx: two legal facings only (rel1c and the German rules summary; alaingilbert allows four).
+- Threefold repetition: automatic draw in the engine (the rule text makes it claimable; a UI may offer the
+  claim instead).
+- Pharaoh rotation: some sources allow it as a pointless "pass with laser"; Daniel's rules notes say the
+  Pharaoh cannot rotate. Engine option `allowPharaohRotation`, default **false**; open question for Daniel.
 
 ## 7. Engine API (`packages/khet-engine/src/index.ts`)
 
