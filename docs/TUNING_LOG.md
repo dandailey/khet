@@ -25,3 +25,14 @@ GPT speed pass 2 (single preview pass per node, shotAfter, lazy threat cache) ga
 no speedup in an interleaved A/B (depth 3 on 10 openings: ~4.5-6.7 s both). Diff archived outside the repo
 (~/projects/khet-recovery/rejected/speed-pass-2.diff). Quiet-host speed: ~100k nodes/s; evaluation is ~30% of
 time.
+
+## 2026-10-07 — External benchmark: vs jkugs/khetai (MIT, C, alpha-beta + Zobrist)
+
+Our engine (default parameters, untuned, commit after levels merge) at 500 ms per move vs khetai at 500 ms
+(local millisecond-timing patch, `external/bridge/CHANGES.md`), 60 games over 30 opening pairs, 2 workers on a
+loaded host: **54 W / 0 D / 6 L, +382 Elo [259, 542]**. Of the 54 wins, 51 were Pharaoh kills and 3 were
+khetai time forfeits (its clock is checked only between iterations; an iteration overran 500 ms by more than
+10 s). Excluding forfeits: 51 W / 6 L. khetai searched about one ply deeper on average (its depth ~3.8-4.3 vs
+ours ~2.3-3.9), so the margin comes from evaluation and tactics (win-in-1 checks, hanging-piece term), not depth.
+An earlier partial run (crashed on the same timeout before the forfeit fix) stood at 17 W / 3 D / 3 L.
+Raw results: local `tools/results/khetai/m500c.jsonl`.
