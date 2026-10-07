@@ -27,8 +27,8 @@ export function applyMove(pos: Position, moveStr: string): Position {
 export function laserResult(pos: Position, color: Color): LaserResult { return pos.traceLaser(color); }
 export function bestMove(pos: Position, opts: SearchOptions = {}): SearchResult {
   if (opts.level === undefined) return search(pos, opts);
-  const { temperature, blunderDepthCap: _cap, ...limits } = levelOptions(opts.level);
-  const options: SearchOptions = { ...limits, ...opts };
+  const { noise, temperature = 0, blunderDepthCap: _cap, ...limits } = levelOptions(opts.level);
+  const options: SearchOptions = { ...limits, ...opts, rootNoise: opts.rootNoise ?? noise };
   // Undefined values are not explicit limits.
   for (const key of ['depth', 'timeMs', 'nodes'] as const) options[key] = opts[key] ?? limits[key];
   if (temperature > 0) options.rootScores = true;

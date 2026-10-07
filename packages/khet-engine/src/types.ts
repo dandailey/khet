@@ -14,6 +14,8 @@ export interface SearchOptions {
   tt?: boolean; ttSize?: number;
   nullMove?: boolean; lmr?: boolean; qsearch?: boolean; threatExtension?: boolean;
   qDepth?: number;
+  /** Standard deviation of fixed seeded root-only score noise; default zero. */
+  rootNoise?: number;
   /** Score every root move with a full window in each completed iteration. */
   rootScores?: boolean;
   /** Expensive one-move victim evaluation; default on, for self-play ablation. */

@@ -86,6 +86,17 @@ function mix(move: number, seed: number): number {
   x = Math.imul(x ^ (x >>> 16), 0x45d9f3b);
   return (x ^ (x >>> 16)) >>> 0;
 }
+/** Box–Muller using two mulberry32 draws keyed by seed and encoded move. */
+function normal(move: number, seed: number): number {
+  let state = mix(move, seed);
+  function draw(): number {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let x = Math.imul(state ^ (state >>> 15), state | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  }
+  return Math.sqrt(-2 * Math.log(1 - draw())) * Math.cos(2 * Math.PI * draw());
+}
 function victimValue(p: number): number {
   const type = pieceType(p);
   return type === PHARAOH ? MATE : type === PYRAMID ? 100 : type === ANUBIS ? 120 : 0;
@@ -98,6 +109,8 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
   }
   if ((options.depth ?? 64) > 64) throw new Error('Maximum search depth is 64');
   if (options.qDepth !== undefined && (!Number.isInteger(options.qDepth) || options.qDepth < 0 || options.qDepth > 16)) throw new Error('Invalid qDepth');
+  if (options.rootNoise !== undefined && (!Number.isFinite(options.rootNoise) || options.rootNoise < 0)) throw new Error('Invalid rootNoise');
+  const rootNoise = options.rootNoise ?? 0;
   const start = performance.now(), pos = position.clone();
   pos.reserveHistory(pos.ply + MAX_PLY + 1024);
   const params = options.params instanceof EvalParams ? options.params : options.params ? new EvalParams(options.params) : DEFAULT_PARAMS;
@@ -120,7 +133,23 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
   const pv = new Int32Array(MAX_PLY * (MAX_PLY + 1) / 2);
   const pvOffsets = new Int32Array(MAX_PLY), pvLengths = new Int32Array(MAX_PLY);
   for (let i = 0; i < MAX_PLY; i++) pvOffsets[i] = i * (2 * MAX_PLY - i + 1) / 2;
-  let nodes = 0;
+  let nodes = 0, rootScore = 0, rootMove = -1;
+  const rootOffsets = new Map<number, number>();
+  function noiseFor(move: number): number {
+    let offset = rootOffsets.get(move);
+    if (offset === undefined) { offset = rootNoise * normal(move, seed); rootOffsets.set(move, offset); }
+    return offset;
+  }
+  function noisyScore(score: number, offset: number): number {
+    return Math.abs(score) >= MATE_BOUND ? score : score + offset;
+  }
+  // Mate scores are not translated. Near that discontinuity, widen the raw
+  // window conservatively so neither mate nor ordinary scores can be pruned.
+  function rawBound(bound: number, offset: number, lower: boolean): number {
+    if (Math.abs(bound) < MATE_BOUND - Math.abs(offset)) return bound - offset;
+    if (Math.abs(bound) >= MATE_BOUND + Math.abs(offset)) return bound;
+    return lower ? Math.min(bound, bound - offset) : Math.max(bound, bound - offset);
+  }
 
   function staticEvaluation(preparedHanging?: ArrayLike<number>): number {
     const cached = tt?.evaluation(pos.hash[0], pos.hash[1]);
@@ -165,7 +194,7 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
     // PV nodes probe for ordering, while bounds only cut off non-PV nodes.
     const lo = pos.hash[0], hi = pos.hash[1], context = extensions | (depth <= 0 ? 128 : (qleft << 2));
     const entry = !tt ? -1 : tt.probe(lo, hi, context);
-    const ttMove = entry < 0 ? -1 : tt!.moves[entry];
+    const ttMove = ply === 0 && rootNoise > 0 ? rootMove : entry < 0 ? -1 : tt!.moves[entry];
     // Repetition was checked on the current path before probing. Accept
     // graph-history interaction when reusing bounds from other paths.
     if (entry >= 0 && ply > 0 && beta === alpha + 1 && tt!.depths[entry] >= requestedDepth) {
@@ -199,7 +228,7 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
     if (options.threatExtension !== false && threatened && extensions < 2) { depth = Math.max(0, depth) + 1; extensions++; }
     const quietSearch = depth <= 0;
     const originalAlpha = alpha;
-    let best = -INF, bestMove = -1;
+    let best = ply === 0 && rootNoise > 0 ? -Infinity : -INF, bestMove = -1, bestRaw = -INF;
     if (quietSearch && !threatened) {
       best = staticEvaluation(preparedHanging);
       if (options.qsearch === false || qleft <= 0 || best >= beta) {
@@ -263,6 +292,9 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
         if (safe && shot >= 0 && pieceType(shot >>> 7) === PHARAOH && pieceColor(shot >>> 7) === pos.side) continue;
       }
       const side = pos.side, quiet = shot < 0;
+      const offset = ply === 0 && rootNoise > 0 ? noiseFor(move) : 0;
+      const childAlpha = offset === 0 ? alpha : rawBound(alpha, offset, true);
+      const childBeta = offset === 0 ? beta : rawBound(beta, offset, false);
       pos.makeMove(move);
       let score: number;
       try {
@@ -272,17 +304,20 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
         } else {
           const nextDepth = quietSearch ? 0 : depth - 1, nextQ = quietSearch ? qleft - 1 : qleft;
           const reduce = options.lmr !== false && depth >= 3 && searched >= 4 && quiet && !threatened && ply > 0;
-          if (searched === 0) score = -negamax(nextDepth, -beta, -alpha, ply + 1, extensions, nextQ);
+          if (searched === 0) score = -negamax(nextDepth, -childBeta, -childAlpha, ply + 1, extensions, nextQ);
           else {
-            score = -negamax(nextDepth - (reduce ? 1 : 0), -alpha - 1, -alpha, ply + 1, extensions, nextQ);
+            const scoutBeta = offset === 0 ? alpha + 1 : rawBound(alpha + 1, offset, false);
+            score = -negamax(nextDepth - (reduce ? 1 : 0), -scoutBeta, -childAlpha, ply + 1, extensions, nextQ);
             if (reduce && score > alpha) score = -negamax(nextDepth, -alpha - 1, -alpha, ply + 1, extensions, nextQ);
-            if (score > alpha && score < beta) score = -negamax(nextDepth, -beta, -alpha, ply + 1, extensions, nextQ);
+            if (noisyScore(score, offset) > alpha && noisyScore(score, offset) < beta) score = -negamax(nextDepth, -childBeta, -childAlpha, ply + 1, extensions, nextQ);
           }
         }
       } finally { pos.unmakeMove(); }
       searched++;
+      const rawScore = score;
+      score = noisyScore(score, offset);
       if (score > best) {
-        best = score; bestMove = move;
+        best = score; bestRaw = rawScore; bestMove = move;
         const offset = pvOffsets[ply], child = pvOffsets[ply + 1];
         pv[offset] = move; pvLengths[ply] = pvLengths[ply + 1] + 1;
         for (let i = 0; i < pvLengths[ply + 1]; i++) pv[offset + 1 + i] = pv[child + i];
@@ -297,8 +332,10 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
         break;
       }
     }
-    if (!searched && best === -INF) best = staticEvaluation(preparedHanging);
-    if (tt) tt.store(lo, hi, context, requestedDepth, best, bestMove,
+    if (!searched && bestMove < 0 && (best === -INF || best === -Infinity)) best = staticEvaluation(preparedHanging);
+    if (ply === 0) { rootScore = bestMove < 0 ? best : bestRaw; rootMove = bestMove; }
+    // A noisy root optimum is not a bound on the ordinary position score.
+    if (tt && !(ply === 0 && rootNoise > 0)) tt.store(lo, hi, context, requestedDepth, best, bestMove,
       best <= originalAlpha ? UPPER : best >= beta ? LOWER : EXACT, ply);
     return best;
   }
@@ -320,12 +357,13 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
   // A tiny limit still receives an immediate win or a safe fallback.
   const immediate = pos.findWinInOne(pos.side);
   if (immediate >= 0 && !options.rootScores) { nodes = 1; return result(immediate, MATE - 1, 1, [immediate]); }
+  let aspirationScore = completed.score;
   for (let depth = 1; depth <= maxDepth; depth++) {
     let window = depth === 1 ? INF * 2 : 20;
     try {
       if (options.rootScores) {
         const rootScores: RootScore[] = [];
-        let best = -INF, bestLine: number[] = [];
+        let best = -Infinity, bestRaw = -INF, bestLine: number[] = [];
         pathLo[0] = pos.hash[0]; pathHi[0] = pos.hash[1];
         // No root pruning, aspiration window, or root tactical shortcut: each
         // legal move gets a full-window score at the same completed depth.
@@ -338,25 +376,28 @@ export function search(position: Position, options: SearchOptions = {}): SearchR
             line = [move, ...pv.subarray(pvOffsets[1], pvOffsets[1] + pvLengths[1])];
           } finally { pos.unmakeMove(); }
           rootScores.push({ move: moveToString(move, position), score });
-          if (score > best) { best = score; bestLine = line; }
+          const comparison = noisyScore(score, rootNoise > 0 ? noiseFor(move) : 0);
+          if (comparison > best) { best = comparison; bestRaw = score; bestLine = line; }
         }
-        completed = { ...result(bestLine[0], best, depth, bestLine), rootScores };
+        completed = { ...result(bestLine[0], bestRaw, depth, bestLine), rootScores };
         options.onIteration?.(completed);
-        if (Math.abs(best) >= MATE_BOUND || performance.now() >= deadline || nodes >= maxNodes) break;
+        if (Math.abs(bestRaw) >= MATE_BOUND || performance.now() >= deadline || nodes >= maxNodes) break;
         continue;
       }
       let score: number;
       while (true) {
-        const alpha = window >= INF ? -INF : Math.max(-INF, completed.score - window);
-        const beta = window >= INF ? INF : Math.min(INF, completed.score + window);
+        const bound = rootNoise > 0 ? Infinity : INF;
+        const alpha = window >= INF ? -bound : Math.max(-bound, aspirationScore - window);
+        const beta = window >= INF ? bound : Math.min(bound, aspirationScore + window);
         score = negamax(depth, alpha, beta, 0, 0, qcap);
         if (score > alpha && score < beta) break;
         window *= 2;
       }
       const line = Array.from(pv.subarray(0, pvLengths[0]));
-      completed = result(line[0] ?? fallback, score, depth, line);
+      aspirationScore = score;
+      completed = result(line[0] ?? fallback, rootNoise > 0 ? rootScore : score, depth, line);
       options.onIteration?.(completed);
-      if (Math.abs(score) >= MATE_BOUND || performance.now() >= deadline || nodes >= maxNodes) break;
+      if (Math.abs(completed.score) >= MATE_BOUND || performance.now() >= deadline || nodes >= maxNodes) break;
     } catch (error) { if (error !== ABORT) throw error; break; }
   }
   return { ...completed, nodes, timeMs: performance.now() - start };
