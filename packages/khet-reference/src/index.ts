@@ -92,7 +92,63 @@ export function refFromPieces(pieces: RefPiece[], side: RefState['side']): RefSt
   return state;
 }
 
-export function refNewGame(setup: 'classic'): RefState {
+export function refNewGame(setup: 'classic' | 'imhotep' | 'dynasty'): RefState {
+  if (setup === 'imhotep') return refFromPieces([
+    { type: 'sphinx', color: 'red', o: 2, row: 0, col: 0 },
+    { type: 'anubis', color: 'red', o: 2, row: 0, col: 4 },
+    { type: 'pharaoh', color: 'red', o: 0, row: 0, col: 5 },
+    { type: 'anubis', color: 'red', o: 2, row: 0, col: 6 },
+    { type: 'scarab', color: 'red', o: 0, row: 0, col: 7 },
+    { type: 'pyramid', color: 'silver', o: 3, row: 2, col: 3 },
+    { type: 'pyramid', color: 'red', o: 0, row: 2, col: 6 },
+    { type: 'pyramid', color: 'red', o: 0, row: 3, col: 0 },
+    { type: 'pyramid', color: 'silver', o: 2, row: 3, col: 1 },
+    { type: 'pyramid', color: 'silver', o: 1, row: 3, col: 4 },
+    { type: 'scarab', color: 'red', o: 0, row: 3, col: 5 },
+    { type: 'pyramid', color: 'red', o: 1, row: 3, col: 8 },
+    { type: 'pyramid', color: 'silver', o: 3, row: 3, col: 9 },
+    { type: 'pyramid', color: 'red', o: 1, row: 4, col: 0 },
+    { type: 'pyramid', color: 'silver', o: 3, row: 4, col: 1 },
+    { type: 'scarab', color: 'silver', o: 0, row: 4, col: 4 },
+    { type: 'pyramid', color: 'red', o: 3, row: 4, col: 5 },
+    { type: 'pyramid', color: 'red', o: 0, row: 4, col: 8 },
+    { type: 'pyramid', color: 'silver', o: 2, row: 4, col: 9 },
+    { type: 'pyramid', color: 'silver', o: 2, row: 5, col: 3 },
+    { type: 'pyramid', color: 'red', o: 1, row: 5, col: 6 },
+    { type: 'scarab', color: 'silver', o: 0, row: 7, col: 2 },
+    { type: 'anubis', color: 'silver', o: 0, row: 7, col: 3 },
+    { type: 'pharaoh', color: 'silver', o: 0, row: 7, col: 4 },
+    { type: 'anubis', color: 'silver', o: 0, row: 7, col: 5 },
+    { type: 'sphinx', color: 'silver', o: 0, row: 7, col: 9 },
+  ], 'silver');
+  if (setup === 'dynasty') return refFromPieces([
+    { type: 'sphinx', color: 'red', o: 2, row: 0, col: 0 },
+    { type: 'pyramid', color: 'red', o: 2, row: 0, col: 4 },
+    { type: 'anubis', color: 'red', o: 2, row: 0, col: 5 },
+    { type: 'pyramid', color: 'red', o: 1, row: 0, col: 6 },
+    { type: 'pharaoh', color: 'red', o: 0, row: 1, col: 5 },
+    { type: 'pyramid', color: 'red', o: 0, row: 2, col: 0 },
+    { type: 'pyramid', color: 'red', o: 2, row: 2, col: 4 },
+    { type: 'anubis', color: 'red', o: 2, row: 2, col: 5 },
+    { type: 'scarab', color: 'red', o: 0, row: 2, col: 6 },
+    { type: 'pyramid', color: 'red', o: 1, row: 3, col: 0 },
+    { type: 'scarab', color: 'red', o: 1, row: 3, col: 2 },
+    { type: 'pyramid', color: 'silver', o: 3, row: 3, col: 4 },
+    { type: 'pyramid', color: 'silver', o: 1, row: 3, col: 6 },
+    { type: 'pyramid', color: 'red', o: 3, row: 4, col: 3 },
+    { type: 'pyramid', color: 'red', o: 1, row: 4, col: 5 },
+    { type: 'scarab', color: 'silver', o: 1, row: 4, col: 7 },
+    { type: 'pyramid', color: 'silver', o: 3, row: 4, col: 9 },
+    { type: 'scarab', color: 'silver', o: 0, row: 5, col: 3 },
+    { type: 'anubis', color: 'silver', o: 0, row: 5, col: 4 },
+    { type: 'pyramid', color: 'silver', o: 0, row: 5, col: 5 },
+    { type: 'pyramid', color: 'silver', o: 2, row: 5, col: 9 },
+    { type: 'pharaoh', color: 'silver', o: 0, row: 6, col: 4 },
+    { type: 'pyramid', color: 'silver', o: 3, row: 7, col: 3 },
+    { type: 'anubis', color: 'silver', o: 0, row: 7, col: 4 },
+    { type: 'pyramid', color: 'silver', o: 0, row: 7, col: 5 },
+    { type: 'sphinx', color: 'silver', o: 0, row: 7, col: 9 },
+  ], 'silver');
   if (setup !== 'classic') throw new Error(`Unknown setup: ${setup}`);
   // Listed by row exactly as in section 6; no generated symmetry or shared engine data.
   return refFromPieces([

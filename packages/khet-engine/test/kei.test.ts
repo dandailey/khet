@@ -17,7 +17,7 @@ test('KEI handshake, newgame, position startpos and KFEN move replay', () => {
 });
 test('KEI failures leave the previous position intact; search exposes the required stub', () => {
   const session = new KEISession(), original = toKFEN(session.position);
-  for (const line of ['newgame dynasty','position garbage','position startpos moves e1+', 'position kfen nonsense','go depth 0','go depth','go unknown 1']) {
+  for (const line of ['newgame unknown','position garbage','position startpos moves e1+', 'position kfen nonsense','go depth 0','go depth','go unknown 1']) {
     assert.match(session.handleLine(line)[0],/^info string /); assert.equal(toKFEN(session.position),original);
   }
   assert.deepEqual(session.handleLine('go level 1 movetime 10 depth 2'), ['info string bestMove: not implemented']);

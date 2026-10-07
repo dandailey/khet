@@ -1,0 +1,52 @@
+{
+  "options": {
+    "games": 10000,
+    "seed": 3523158054,
+    "setup": "all",
+    "legacy": "none"
+  },
+  "games": 10000,
+  "plies": 113252,
+  "shotsDestroying": 49726,
+  "preferredShots": 32994,
+  "outcomes": {
+    "silver": 4719,
+    "red": 5281,
+    "repetition": 0,
+    "cap": 0,
+    "disagreement": 0
+  },
+  "setups": {
+    "classic": 3334,
+    "imhotep": 3333,
+    "dynasty": 3333
+  },
+  "reference": [],
+  "legacy": {
+    "legal moves": {
+      "count": 0,
+      "examples": []
+    },
+    "laser": {
+      "count": 0,
+      "examples": []
+    },
+    "destroyed": {
+      "count": 0,
+      "examples": []
+    },
+    "result": {
+      "count": 0,
+      "examples": []
+    },
+    "position": {
+      "count": 0,
+      "examples": []
+    }
+  },
+  "legacyTurns": 0,
+  "legacyApplied": 0,
+  "legacyUnavailable": 0,
+  "nativeStartChecks": 0,
+  "seconds": 29.311023901000002
+}

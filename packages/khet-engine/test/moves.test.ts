@@ -99,7 +99,7 @@ test('Convenience wrappers preserve original state, clone undo and expose the re
   next.unmakeMove(); assert.equal(toKFEN(next), original);
   assert.deepEqual(laserResult(pos, SILVER), pos.traceLaser(SILVER));
   assert.throws(() => bestMove(pos), { message: 'bestMove: not implemented' });
-  assert.throws(() => newGame('imhotep'), /Unknown setup/);
+  assert.throws(() => newGame('unknown'), /Unknown setup/);
   assert.throws(() => newGame('toString'), /Unknown setup/);
   assert.equal(fromKFEN(original).key(), pos.key());
 });

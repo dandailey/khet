@@ -1,0 +1,29 @@
+Commands: npm run typecheck; npm test; node --test --experimental-test-isolation=none --test-concurrency=1 "packages/*/test/*.test.ts"
+
+tsc -p tsconfig.json: PASS (exit 0)
+
+khet-tests.log
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4599.741547
+
+khet-tests-detailed.log
+1..266
+# tests 266
+# suites 0
+# pass 266
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9873.391908
+
+classic differential: 300 games; 3374 plies; 0 disagreements
+imhotep differential: 300 games; 2873 plies; 0 disagreements
+dynasty differential: 300 games; 3783 plies; 0 disagreements
