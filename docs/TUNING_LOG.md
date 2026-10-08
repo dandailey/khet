@@ -83,3 +83,23 @@ The span from L1 to L5 is about 1,800 Elo; five levels give ~450-Elo cliffs (a p
 level scores ~7% against the next). Decision (Khet SME): ten levels targeting ~200 Elo steps
 (Novice, Beginner, Casual, Apprentice, Club, Strong, Expert, Master, Grandmaster, Pharaoh). Round 3 calibrates
 all nine adjacent pairs.
+
+## 2026-10-08 — Level calibration, round 3 (ten levels)
+
+40 games per adjacent pair, 2 workers, loaded host:
+
+| Pair | W/D/L | Elo [95%] |
+|---|---|---|
+| L2 vs L1 | 26/8/6 | +191 [80, 302] |
+| L3 vs L2 | 29/5/6 | +228 [136, 337] |
+| L4 vs L3 | 17/17/6 | +98 [29, 176] |
+| L5 vs L4 | 29/8/3 | +269 [153, 409] |
+| L6 vs L5 | 34/2/4 | +338 [208, 500] |
+| L7 vs L6 | 33/1/6 | +285 [158, 447] |
+| L8 vs L7 | 25/8/7 | +168 [56, 289] |
+| L9 vs L8 | 20/9/11 | +80 [-34, 194] |
+| L10 vs L9 | 19/14/7 | +108 [22, 203] |
+
+Monotonic; span about 1,750 Elo. Adjustments for v1: L4 noise 80 -> 60, L6 noise 25 -> 50, L8 600 -> 500 ms,
+L10 3000 -> 5000 ms. The top levels are limited by search speed: on a fast, idle device they search deeper than
+on the loaded server. Pairs touching changed levels are re-verified in round 4.

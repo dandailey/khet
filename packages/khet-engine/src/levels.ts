@@ -15,13 +15,13 @@ export const LEVELS: LevelDefinition[] = [
   { level: 1, name: 'Novice', limits: { depth: 1 }, noise: 250 },
   { level: 2, name: 'Beginner', limits: { depth: 1 }, noise: 120 },
   { level: 3, name: 'Casual', limits: { depth: 1 }, noise: 50 },
-  { level: 4, name: 'Apprentice', limits: { depth: 2 }, noise: 80 },
+  { level: 4, name: 'Apprentice', limits: { depth: 2 }, noise: 60 },
   { level: 5, name: 'Club', limits: { depth: 2 }, noise: 30 },
-  { level: 6, name: 'Strong', limits: { depth: 3, timeMs: 400 }, noise: 25 },
+  { level: 6, name: 'Strong', limits: { depth: 3, timeMs: 400 }, noise: 50 },
   { level: 7, name: 'Expert', limits: { timeMs: 250 }, noise: 0 },
-  { level: 8, name: 'Master', limits: { timeMs: 600 }, noise: 0 },
+  { level: 8, name: 'Master', limits: { timeMs: 500 }, noise: 0 },
   { level: 9, name: 'Grandmaster', limits: { timeMs: 1500 }, noise: 0 },
-  { level: 10, name: 'Pharaoh', limits: { timeMs: 3000 }, noise: 0 },
+  { level: 10, name: 'Pharaoh', limits: { timeMs: 5000 }, noise: 0 },
 ];
 export const MAX_LEVEL = LEVELS.length;
 
