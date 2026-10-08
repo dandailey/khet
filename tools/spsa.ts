@@ -44,7 +44,7 @@ export async function tuneSpsa(config: SpsaConfig, openings: string[], logPath: 
   const previous = await readLog<Iteration>(logPath);
   previous.forEach((entry, i) => { if (entry.fingerprint !== fingerprint || entry.iteration !== i + 1 || names.some(name => !Number.isFinite(entry.theta[name]))) throw new Error('SPSA log/config mismatch; use the original config and openings or a new log'); });
   let theta: Params = previous.length ? { ...previous.at(-1)!.theta } : Object.fromEntries(names.map(name => [name, clamp(config.params[name].start, config.params[name])]));
-  const logger = await jsonLogger(logPath, true), runner = new MatchRunner(1);
+  const logger = await jsonLogger(logPath, true), runner = new MatchRunner(2); // the two games of each pair run in parallel
   try {
     for (let k = previous.length + 1; k <= iterations; k++) {
       const seed = seedFor(config.seed ?? 1, k), rng = random(seed);

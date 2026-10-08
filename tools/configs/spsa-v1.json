@@ -1,0 +1,125 @@
+{
+ "player": {
+  "label": "spsa",
+  "player": "engine",
+  "nodes": 10000,
+  "options": {
+   "ttSize": 65536
+  }
+ },
+ "nodes": 10000,
+ "iterations": 1000,
+ "seed": 2026,
+ "schedules": {
+  "alpha": 0.602,
+  "gamma": 0.101,
+  "A": 50
+ },
+ "params": {
+  "anubis": {
+   "start": 120,
+   "c": 12,
+   "a": 60.48,
+   "min": -24,
+   "max": 264
+  },
+  "exposureLine": {
+   "start": -100,
+   "c": 10,
+   "a": 42.0,
+   "min": -220,
+   "max": 20
+  },
+  "exposureReach": {
+   "start": -4,
+   "c": 4,
+   "a": 6.72,
+   "min": -52,
+   "max": 44
+  },
+  "exposureOpen": {
+   "start": -1,
+   "c": 3,
+   "a": 3.78,
+   "min": -37,
+   "max": 35
+  },
+  "shelterBlocker": {
+   "start": 8,
+   "c": 4,
+   "a": 6.72,
+   "min": -40,
+   "max": 56
+  },
+  "shelterShield": {
+   "start": 16,
+   "c": 5,
+   "a": 10.5,
+   "min": -44,
+   "max": 76
+  },
+  "backRank": {
+   "start": 10,
+   "c": 5,
+   "a": 10.5,
+   "min": -50,
+   "max": 70
+  },
+  "hangingPyramid": {
+   "start": -45,
+   "c": 8,
+   "a": 26.88,
+   "min": -141,
+   "max": 51
+  },
+  "hangingAnubis": {
+   "start": -55,
+   "c": 8,
+   "a": 26.88,
+   "min": -151,
+   "max": 41
+  },
+  "beamLength": {
+   "start": 1,
+   "c": 2,
+   "a": 1.68,
+   "min": -23,
+   "max": 25
+  },
+  "beamNearKing": {
+   "start": 3,
+   "c": 3,
+   "a": 3.78,
+   "min": -33,
+   "max": 39
+  },
+  "beamAdjacent": {
+   "start": 2,
+   "c": 3,
+   "a": 3.78,
+   "min": -34,
+   "max": 38
+  },
+  "pyramidMobility": {
+   "start": 2,
+   "c": 2,
+   "a": 1.68,
+   "min": -22,
+   "max": 26
+  },
+  "scarabMobility": {
+   "start": 3,
+   "c": 3,
+   "a": 3.78,
+   "min": -33,
+   "max": 39
+  },
+  "tempo": {
+   "start": 5,
+   "c": 4,
+   "a": 6.72,
+   "min": -43,
+   "max": 53
+  }
+ }
+}
