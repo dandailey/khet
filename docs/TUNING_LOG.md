@@ -154,3 +154,10 @@ tempo 6.2 -> 10.1.
 Adopted as defaults (rounded to 0.1). Cumulative over the original defaults: SPSA v1 (+31) then v2 (+83 at 10k
 nodes). The level ladder was calibrated on the original eval; all levels share the eval, so steps should hold
 roughly, but recalibrate before calling the ladder final. Next: SPSA v3 from v2 values.
+
+## 2026-10-08 — SPSA v3: rejected (plateau)
+
+`tools/configs/spsa-v3.json` from the v2 values (same gains). Verification vs v2 defaults:
+10k nodes, 800 games: 333/122/345, -5.2 Elo [-27.6, 17.1] (LLR -1.47, inconclusive);
+300 ms, 120 games: 39/30/51, -34.9 Elo [-88.6, 15.9]. Rejected; v2 stays the default. Game-based tuning of
+these 15 scalars has plateaued at this search depth; further gains need new evaluation features or search work.
