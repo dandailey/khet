@@ -69,3 +69,17 @@ Adjacent-level matches, 2 workers, loaded host (`tools/calibrate-levels.sh`):
 Problems: steps are too large at the bottom, and L3 is crippled: its softmax noise uses full-window root
 scoring of every root move, so at 300 ms it averaged depth 2.1 vs L4's 3.6. Fix: cheap root noise (a seeded
 per-root-move score offset applied inside the normal search), then recalibrate.
+
+## 2026-10-08 — Level calibration, round 2 (root noise, five levels)
+
+| Pair | Games | W/D/L | Elo |
+|---|---|---|---|
+| L2 vs L1 | 40 | 36/4/0 | +512 [305, 757] |
+| L3 vs L2 | 40 | 38/2/0 | +636 [351, 944] |
+| L4 vs L3 | 40 | 37/1/2 | +470 [282, 717] |
+| L5 vs L4 | 30 | 20/6/4 | +207 [96, 332] |
+
+The span from L1 to L5 is about 1,800 Elo; five levels give ~450-Elo cliffs (a player who splits with one
+level scores ~7% against the next). Decision (Khet SME): ten levels targeting ~200 Elo steps
+(Novice, Beginner, Casual, Apprentice, Club, Strong, Expert, Master, Grandmaster, Pharaoh). Round 3 calibrates
+all nine adjacent pairs.
