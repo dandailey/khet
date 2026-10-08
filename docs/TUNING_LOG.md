@@ -138,3 +138,19 @@ c about 10-20% of each value, a = 0.42 c^2, A = 50. The parameters moved little 
 beamLength 1 -> 0.4, scarabMobility 3 -> 1.6). Verification vs the old defaults at 10k nodes, 800 games:
 **383/105/312, +30.9 Elo [7.9, 54.0], LOS 99.6%** (GSPRT LLR 2.53, just short of the 2.94 bound). Adopted as the
 new defaults (rounded to 0.1). Next: SPSA v2 from these values with larger steps (a x 8).
+
+## 2026-10-08 — SPSA v2: adopted
+
+`tools/configs/spsa-v2.json`: started from the v1 values, step gain a x 8, 1,000 iterations at 10k nodes.
+Notable moves: shelterShield 16.2 -> 0.4, backRank 10.2 -> -2.6, hangingAnubis -58 -> -84.9,
+exposureLine -97.2 -> -78.4, exposureReach -6.3 -> -10, scarabMobility 1.6 -> -5.1, beamNearKing 2.1 -> -3.6,
+tempo 6.2 -> 10.1.
+
+| Verification vs v1 defaults | Games | W/D/L | Elo [95%] |
+|---|---|---|---|
+| 10k nodes/move, SPRT [0, 15] | 290 | 162/34/94 | +83.0 [45.4, 121.1], H1 accepted |
+| 300 ms/move | 120 | 72/17/31 | +123.7 [63.6, 187.4] |
+
+Adopted as defaults (rounded to 0.1). Cumulative over the original defaults: SPSA v1 (+31) then v2 (+83 at 10k
+nodes). The level ladder was calibrated on the original eval; all levels share the eval, so steps should hold
+roughly, but recalibrate before calling the ladder final. Next: SPSA v3 from v2 values.
