@@ -222,11 +222,11 @@ test('Sphinx rotation buttons reflect the physical turn and levels map to KEI le
   const game = new GameController();
   assert.equal(rotationMove(game.position, 79, true), undefined);
   assert.equal(rotationMove(game.position, 79, false), 'j1+');
-  for (let level = 1; level <= 5; level++) {
+  for (let level = 1; level <= 10; level++) {
     game.level = level;
     assert.equal(game.goCommand(), `go level ${level}`);
   }
-  assert.equal(game.goCommand(true), 'go level 3');
+  assert.equal(game.goCommand(true), 'go level 7');
 });
 
 test('KEI supports readiness, setup replay, bad-command recovery, stop and quit', () => {

@@ -1,7 +1,11 @@
 #!/bin/bash
-# Adjacent-level calibration matches: higher level as A. Usage: tools/calibrate-levels.sh
+# Adjacent-level calibration: level n+1 (A) vs level n (B) for n in FROM..TO-1, GAMES games each.
+# Usage: tools/calibrate-levels.sh [FROM=1] [TO=10] [GAMES=40]
 cd "$(dirname "$0")/.." || exit 1
+from=${1:-1}; to=${2:-10}; games=${3:-40}
 out=tools/results/levels/$(date -u +%Y%m%dT%H%M%SZ); mkdir -p "$out"
-run() { majel-heavy node tools/match.ts --a tools/configs/lv/L$2.json --b tools/configs/lv/L$1.json --games "$3" \
-  --concurrency 2 --out "$out/L$2-vs-L$1.jsonl" 2>&1 | grep '^Final' | sed "s/^/L$2 vs L$1: /" | tee -a "$out/summary.txt"; }
-run 1 2 60; run 2 3 60; run 3 4 40; run 4 5 30
+for ((n = from; n < to; n++)); do
+  m=$((n + 1))
+  majel-heavy node tools/match.ts --a tools/configs/lv/L$m.json --b tools/configs/lv/L$n.json --games "$games" \
+    --concurrency 2 --out "$out/L$m-vs-L$n.jsonl" 2>&1 | grep '^Final' | sed "s/^/L$m vs L$n: /" | tee -a "$out/summary.txt"
+done

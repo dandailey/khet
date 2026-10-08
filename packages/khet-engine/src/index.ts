@@ -1,6 +1,6 @@
 export { SILVER, RED, N, E, S, W, PHARAOH, SPHINX, PYRAMID, SCARAB, ANUBIS, STEP, SWAP, ROT_CW, ROT_CCW, MAX_MOVES, encodeMove, encodePiece, opposite } from './types.ts';
 export type { Color, Result, Piece, PlacedPiece, LaserResult, RootScore, SearchOptions, SearchResult } from './types.ts';
-export { LEVELS, levelOptions } from './levels.ts';
+export { LEVELS, MAX_LEVEL, levelOptions } from './levels.ts';
 export type { LevelDefinition } from './levels.ts';
 export { SETUPS } from './setups.ts';
 export { Position, newGame, fromPieces } from './position.ts';

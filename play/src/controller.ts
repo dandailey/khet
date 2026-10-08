@@ -119,7 +119,7 @@ export class GameController {
     return `position kfen ${this.initialKFEN}${this.history.length ? ' moves ' + this.history.map(entry => entry.move).join(' ') : ''}`;
   }
   goCommand(hint = false): string {
-    const level = hint ? 3 : Math.max(1, Math.min(5, this.level));
+    const level = hint ? 7 : Math.max(1, Math.min(10, this.level));
     return `go level ${level}`;
   }
 }

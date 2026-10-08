@@ -10,18 +10,24 @@ export interface LevelDefinition {
   blunderDepthCap?: number;
 }
 
-/** Initial targets; calibrate these values with self-play. */
+/** Ten levels, intended to be about 200 Elo apart; values are calibrated by self-play (docs/TUNING_LOG.md). */
 export const LEVELS: LevelDefinition[] = [
-  { level: 1, name: 'Novice', limits: { depth: 1 }, noise: 150 },
-  { level: 2, name: 'Casual', limits: { depth: 2 }, noise: 80 },
-  { level: 3, name: 'Club', limits: { timeMs: 250 }, noise: 40 },
-  { level: 4, name: 'Expert', limits: { timeMs: 800 }, noise: 0 },
-  { level: 5, name: 'Master', limits: { timeMs: 2500 }, noise: 0 },
+  { level: 1, name: 'Novice', limits: { depth: 1 }, noise: 250 },
+  { level: 2, name: 'Beginner', limits: { depth: 1 }, noise: 120 },
+  { level: 3, name: 'Casual', limits: { depth: 1 }, noise: 50 },
+  { level: 4, name: 'Apprentice', limits: { depth: 2 }, noise: 80 },
+  { level: 5, name: 'Club', limits: { depth: 2 }, noise: 30 },
+  { level: 6, name: 'Strong', limits: { depth: 3, timeMs: 400 }, noise: 25 },
+  { level: 7, name: 'Expert', limits: { timeMs: 250 }, noise: 0 },
+  { level: 8, name: 'Master', limits: { timeMs: 600 }, noise: 0 },
+  { level: 9, name: 'Grandmaster', limits: { timeMs: 1500 }, noise: 0 },
+  { level: 10, name: 'Pharaoh', limits: { timeMs: 3000 }, noise: 0 },
 ];
+export const MAX_LEVEL = LEVELS.length;
 
 export function levelOptions(level: number): LevelDefinition['limits'] & Pick<LevelDefinition, 'noise' | 'temperature' | 'blunderDepthCap'> {
   const definition = LEVELS.find(entry => entry.level === level);
-  if (!Number.isInteger(level) || !definition) throw new Error('Level must be between 1 and 5');
+  if (!Number.isInteger(level) || !definition) throw new Error(`Level must be between 1 and ${MAX_LEVEL}`);
   return { ...definition.limits, noise: definition.noise ?? 0,
     ...(definition.temperature === undefined ? {} : { temperature: definition.temperature }),
     ...(definition.blunderDepthCap === undefined ? {} : { blunderDepthCap: definition.blunderDepthCap }) };

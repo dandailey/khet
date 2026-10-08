@@ -1,9 +1,94 @@
 {
-  "levels":[
-    {"level":1,"label":"Novice","player":"engine","options":{"level":1,"ttSize":65536}},
-    {"level":2,"label":"Casual","player":"engine","options":{"level":2,"ttSize":65536}},
-    {"level":3,"label":"Club","player":"engine","options":{"level":3,"ttSize":65536}},
-    {"level":4,"label":"Expert","player":"engine","options":{"level":4,"ttSize":65536}},
-    {"level":5,"label":"Master","player":"engine","options":{"level":5,"ttSize":65536}}
-  ]
+ "levels": [
+  {
+   "level": 1,
+   "label": "Novice",
+   "player": "engine",
+   "options": {
+    "level": 1,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 2,
+   "label": "Beginner",
+   "player": "engine",
+   "options": {
+    "level": 2,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 3,
+   "label": "Casual",
+   "player": "engine",
+   "options": {
+    "level": 3,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 4,
+   "label": "Apprentice",
+   "player": "engine",
+   "options": {
+    "level": 4,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 5,
+   "label": "Club",
+   "player": "engine",
+   "options": {
+    "level": 5,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 6,
+   "label": "Strong",
+   "player": "engine",
+   "options": {
+    "level": 6,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 7,
+   "label": "Expert",
+   "player": "engine",
+   "options": {
+    "level": 7,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 8,
+   "label": "Master",
+   "player": "engine",
+   "options": {
+    "level": 8,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 9,
+   "label": "Grandmaster",
+   "player": "engine",
+   "options": {
+    "level": 9,
+    "ttSize": 65536
+   }
+  },
+  {
+   "level": 10,
+   "label": "Pharaoh",
+   "player": "engine",
+   "options": {
+    "level": 10,
+    "ttSize": 65536
+   }
+  }
+ ]
 }
