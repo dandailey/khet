@@ -116,3 +116,17 @@ on the loaded server. Pairs touching changed levels are re-verified in round 4.
 | L10 vs L9 | 28/8/4 | +241 [129, 366] |
 
 L6 at noise 50 became too weak. Adjustment: L5 noise 30 -> 10, L6 noise 50 -> 30; round 5 re-verifies L4..L7.
+
+## 2026-10-08 — Level calibration, round 5 and v1 ladder
+
+| Pair | W/D/L | Elo [95%] |
+|---|---|---|
+| L5 vs L4 | 30/6/4 | +269 [145, 414] |
+| L6 vs L5 | 28/6/6 | +215 [125, 325] |
+| L7 vs L6 | 35/1/4 | +359 [219, 538] |
+
+**v1 ladder** (chained from the latest measurement of each adjacent pair; each step +/- ~100 at 40 games):
+L1 Novice 0, L2 Beginner ~190, L3 Casual ~420, L4 Apprentice ~670, L5 Club ~940, L6 Strong ~1160,
+L7 Expert ~1520, L8 Master ~1620, L9 Grandmaster ~1700, L10 Pharaoh ~1940 (self-play Elo, L1 = 0; not a human
+rating scale). Known soft spots: L7->L8 and L8->L9 are small steps (time doubling gains little on the loaded
+host); L6->L7 is the largest. Revisit after SPSA tuning changes the engine's strength curve.
