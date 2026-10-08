@@ -1617,13 +1617,13 @@ function handleLaserHit(endpoint) {
 
   if (hitPiece.type === 'pharaoh') {
     gameState.gameOver = true
-    // Winner is the OPPOSITE player - whoever shot their own pharaoh loses
-    gameState.winner = gameState.currentPlayer === RED ? SILVER : RED
+    // The owner of the destroyed Pharaoh loses, whoever fired the shot
+    gameState.winner = hitPiece.player === RED ? SILVER : RED
     // Overlay will be shown after the laser animation in handleFireLaser
     persistLaserPath()
     updateUrlHash()
     // Stop polling when game ends
-    stopGameSyncPolling()
+    stopSyncPolling()
   }
 }
 
