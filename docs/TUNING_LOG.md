@@ -103,3 +103,16 @@ all nine adjacent pairs.
 Monotonic; span about 1,750 Elo. Adjustments for v1: L4 noise 80 -> 60, L6 noise 25 -> 50, L8 600 -> 500 ms,
 L10 3000 -> 5000 ms. The top levels are limited by search speed: on a fast, idle device they search deeper than
 on the loaded server. Pairs touching changed levels are re-verified in round 4.
+
+## 2026-10-08 — Level calibration, round 4 (re-verify adjusted pairs)
+
+| Pair | W/D/L | Elo [95%] |
+|---|---|---|
+| L4 vs L3 | 30/5/5 | +255 [153, 381] |
+| L5 vs L4 | 21/13/6 | +137 [57, 228] |
+| L6 vs L5 | 27/10/3 | +241 [136, 362] |
+| L7 vs L6 | 39/0/1 | +636 [342, 1134] |
+| L8 vs L7 | 22/7/11 | +98 [-17, 211] |
+| L10 vs L9 | 28/8/4 | +241 [129, 366] |
+
+L6 at noise 50 became too weak. Adjustment: L5 noise 30 -> 10, L6 noise 50 -> 30; round 5 re-verifies L4..L7.
