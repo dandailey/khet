@@ -130,3 +130,11 @@ L1 Novice 0, L2 Beginner ~190, L3 Casual ~420, L4 Apprentice ~670, L5 Club ~940,
 L7 Expert ~1520, L8 Master ~1620, L9 Grandmaster ~1700, L10 Pharaoh ~1940 (self-play Elo, L1 = 0; not a human
 rating scale). Known soft spots: L7->L8 and L8->L9 are small steps (time doubling gains little on the loaded
 host); L6->L7 is the largest. Revisit after SPSA tuning changes the engine's strength curve.
+
+## 2026-10-08 — SPSA v1: adopted
+
+`tools/configs/spsa-v1.json`: 15 evaluation scalars, 1,000 iterations (2,000 games) at 10k nodes per move,
+c about 10-20% of each value, a = 0.42 c^2, A = 50. The parameters moved little (largest: exposureReach -4 -> -6.3,
+beamLength 1 -> 0.4, scarabMobility 3 -> 1.6). Verification vs the old defaults at 10k nodes, 800 games:
+**383/105/312, +30.9 Elo [7.9, 54.0], LOS 99.6%** (GSPRT LLR 2.53, just short of the 2.94 bound). Adopted as the
+new defaults (rounded to 0.1). Next: SPSA v2 from these values with larger steps (a x 8).

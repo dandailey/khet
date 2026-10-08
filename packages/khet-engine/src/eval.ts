@@ -19,7 +19,8 @@ export const PARAM_NAMES: readonly string[] = Object.freeze([
 ]);
 const INDEX = new Map(PARAM_NAMES.map((name, i) => [name, i]));
 const INITIAL = new Float64Array(PARAM_NAMES.length);
-INITIAL.set([100, 120, -100, -4, -1, 8, 16, 10, -45, -55, -400, 1, 3, 2, 2, 3, 5]);
+// SPSA v1 (2026-10-08, +31 Elo [8, 54] over 800 games at 10k nodes; docs/TUNING_LOG.md).
+INITIAL.set([100, 120, -97.2, -6.3, -1.9, 8.5, 16.2, 10.2, -46.3, -58, -400, 0.4, 2.1, 2.2, 1.9, 1.6, 6.2]);
 
 /** Named, flat vector. values is directly usable by SPSA/Texel optimizers. */
 export class EvalParams {
