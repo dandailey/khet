@@ -170,3 +170,9 @@ untuned eval).
 **Ladder recalibration (40 games per pair):** L2-L1 +255, L3-L2 +470, L4-L3 +255, L5-L4 +301, L6-L5 +158,
 L7-L6 +512, L8-L7 +61, L9-L8 +98, L10-L9 +285. The tuned eval sharpened the shallow levels. Adjustments:
 L3 noise 50 -> 80, L6 noise 30 -> 20, L7 noise 0 -> 15; pairs 2..8 re-verified next.
+
+**Re-verification (40 games per pair):** with L3 noise 80: L3-L2 +98, L4-L3 +382, L5-L4 +301, L6-L5 +241,
+L7-L6 +215, L8-L7 +215. L3 noise set to 65: L3-L2 +191 [72, 319], L4-L3 +319 [211, 428].
+
+**Final ladder (SPSA v2 eval), steps L1->L10:** +255, +191, +319, +301, +241, +215, +215, +98, +285
+(cumulative ~2,100 self-play Elo; each step +/- ~100). Shipped in the integrated game.

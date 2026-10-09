@@ -14,7 +14,7 @@ export interface LevelDefinition {
 export const LEVELS: LevelDefinition[] = [
   { level: 1, name: 'Novice', limits: { depth: 1 }, noise: 250 },
   { level: 2, name: 'Beginner', limits: { depth: 1 }, noise: 120 },
-  { level: 3, name: 'Casual', limits: { depth: 1 }, noise: 80 },
+  { level: 3, name: 'Casual', limits: { depth: 1 }, noise: 65 },
   { level: 4, name: 'Apprentice', limits: { depth: 2 }, noise: 60 },
   { level: 5, name: 'Club', limits: { depth: 2 }, noise: 10 },
   { level: 6, name: 'Strong', limits: { depth: 3, timeMs: 400 }, noise: 20 },
