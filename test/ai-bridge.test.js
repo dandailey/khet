@@ -8,6 +8,7 @@ import {
 } from '../packages/khet-engine/src/index.ts'
 import { gameActionToEngineMove, gameStateToKFEN, engineMoveToGameAction, kfenToBoard } from '../src/ai/bridge.js'
 import { computeLaserPath, findSphinx, resolveLaserInteraction } from '../src/game/laser.js'
+import { applyBoardAction } from '../src/game/moves.js'
 
 const main = readFileSync(new URL('../src/main.js', import.meta.url), 'utf8')
 const originalMain = readFileSync(new URL('../packages/khet-legacy/test/fixtures/main.js.txt', import.meta.url), 'utf8')
@@ -23,6 +24,8 @@ function functionSource(source, name) {
 function liveRules(state) {
   const reservations = main.slice(main.indexOf('const RESERVED_RED'), main.indexOf('// Game state'))
   const context = vm.createContext({
+    stagedBoard: null,
+    stageAction(action) { context.stagedBoard = applyBoardAction(state.board, action) },
     gameState: state, newGame, toKFEN, kfenToBoard, turnInProgress: false,
     clearSelection() {}, renderBoard() {}, setTimeout() {}, updateComputerStatus() {},
     canPerformAction() { return true }, prepareEngineTurn() {}
@@ -216,13 +219,15 @@ test('Every engine legal move on 300 positions converts to a game action and bac
         // Confirm physical rotation against the live function, not just text inversion.
         const facing = piece.facing
         rules.rotatePiece(action.from.row, action.from.col, action.direction === 'cw' ? 'right' : 'left')
+        const rotatedPiece = rules.stagedBoard[action.from.row][action.from.col]
+        assert.equal(piece.facing, facing, 'rotation stages without mutating the original piece')
         if (piece.type === 'pyramid' || piece.type === 'anubis') {
           const facings = piece.type === 'pyramid' ? ['NE', 'SE', 'SW', 'NW'] : CARDINAL
-          assert.equal(piece.facing, facings[(facings.indexOf(facing) + (action.direction === 'cw' ? 1 : 3)) % 4])
+          assert.equal(rotatedPiece.facing, facings[(facings.indexOf(facing) + (action.direction === 'cw' ? 1 : 3)) % 4])
         } else if (piece.type === 'scarab') {
-          assert.notEqual(resolveLaserInteraction({ ...piece, facing }, 'N').newDirection, resolveLaserInteraction(piece, 'N').newDirection)
+          assert.notEqual(resolveLaserInteraction({ ...piece, facing }, 'N').newDirection, resolveLaserInteraction(rotatedPiece, 'N').newDirection)
         } else {
-          assert.equal(piece.facing, CARDINAL[(CARDINAL.indexOf(facing) + (action.direction === 'cw' ? 1 : 3)) % 4])
+          assert.equal(rotatedPiece.facing, CARDINAL[(CARDINAL.indexOf(facing) + (action.direction === 'cw' ? 1 : 3)) % 4])
         }
         piece.facing = facing
       }

@@ -6,7 +6,8 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fromKFEN, legalMoves, applyMove, newGame, toKFEN } from '../packages/khet-engine/src/index.ts'
 import { decodeState } from '../src/game/stateCodec.js'
-import { gameStateToKFEN, engineMoveToGameAction } from '../src/ai/bridge.js'
+import { gameStateToKFEN, engineMoveToGameAction, gameActionToEngineMove } from '../src/ai/bridge.js'
+import { applyBoardAction } from '../src/game/moves.js'
 
 let chromium
 try {
@@ -58,6 +59,50 @@ async function clickAction(page, action, state) {
     await page.locator(`[data-row="${action.to.row}"][data-col="${action.to.col}"]`).dispatchEvent("click")
   }
 }
+async function boardPieces(page) {
+  return page.locator('.square').evaluateAll(squares => squares.map(square => ({
+    row: square.dataset.row, col: square.dataset.col,
+    piece: square.querySelector('.piece-container:not(.staged-ghost) .piece')?.innerHTML || null
+  })))
+}
+async function assertStaged(page, action, state) {
+  const url = page.url()
+  const before = await boardPieces(page)
+  await clickAction(page, action, state)
+  assert.deepEqual(stateFromUrl(page.url()), state, 'staging leaves saved game state unchanged')
+  assert.equal(page.url(), url, 'staging does not persist a turn')
+  assert.equal(await page.locator('#move-confirmation').isVisible(), true, 'Fire/Cancel bar is visible')
+  assert.equal(await page.locator('.laser-path').count(), 0, 'staging never test-fires the laser')
+  assert.equal(await page.locator('.staged-ghost').count(), action.kind === 'swap' ? 2 : 1, 'origin ghosts are visible')
+  for (const button of ['#fire-laser', '#cancel-move']) {
+    assert.ok((await page.locator(button).boundingBox()).height >= 44, 'confirmation buttons have phone-sized targets')
+  }
+  assert.notDeepEqual(await boardPieces(page), before, 'staged result appears on the board')
+  await page.locator('#cancel-move').click()
+  assert.deepEqual(await boardPieces(page), before, 'Cancel restores the board')
+  assert.deepEqual(stateFromUrl(page.url()), state, 'Cancel leaves game state unchanged')
+  assert.equal(await page.locator('#move-confirmation').isVisible(), false)
+  await clickAction(page, action, state)
+  await page.getByRole('button', { name: 'Fire laser', exact: true }).click()
+}
+async function assertReplyDestination(page, before, after) {
+  const action = await page.locator('#game-board').evaluate(board => JSON.parse(board.dataset.lastMove))
+  const expected = applyBoardAction(before.board, action)
+  const destination = action.to
+  const piece = after.board[destination.row][destination.col]
+  // A firing laser can destroy its own moved piece; the final state must agree
+  // with the engine's complete turn as well as with the board's rendered piece.
+  const engineMove = gameActionToEngineMove(action, before)
+  const expectedKFEN = toKFEN(applyMove(fromKFEN(gameStateToKFEN(before)), engineMove))
+  // The live game keeps the winner as side to move when a Pharaoh is hit.
+  if (after.gameOver) assert.equal(gameStateToKFEN(after).split(' ')[0], expectedKFEN.split(' ')[0])
+  else assert.equal(gameStateToKFEN(after), expectedKFEN)
+  if (piece) assert.deepEqual(piece, expected[destination.row][destination.col], 'AI piece ends on its destination square')
+  const square = page.locator(`[data-row="${destination.row}"][data-col="${destination.col}"]`)
+  assert.equal(await square.locator('.piece-container:not(.staged-ghost) .piece').count(), piece ? 1 : 0, 'rendered AI destination matches final state')
+  assert.equal(await square.evaluate(element => element.classList.contains('last-move')), true, 'last move remains highlighted')
+  assert.equal(await page.locator('.move-animation').count(), 0, 'animation overlays are cleaned up')
+}
 try {
   for (const setup of ['classic', 'imhotep', 'dynasty']) {
     const context = await browser.newContext()
@@ -104,15 +149,19 @@ try {
         continue
       }
       const move = moves[randomIndex(moves.length)]
-      await clickAction(page, engineMoveToGameAction(move, state), state)
       const nextPly = state.ply + 2
+      await assertStaged(page, engineMoveToGameAction(move, state), state)
+      await page.waitForURL(url => stateFromUrl(url.href).ply === nextPly - 1, { timeout: 20000 })
+      const beforeAI = stateFromUrl(page.url())
+      await page.locator('.move-animation').first().waitFor({ state: 'attached', timeout: 20000 })
       // Wait for the human laser to finish and the AI turn to begin before checking idle.
       await page.waitForURL(url => stateFromUrl(url.href).ply >= nextPly, { timeout: 20000 })
       state = await waitForHuman(page, nextPly, 2, true)
+      await assertReplyDestination(page, beforeAI, state)
       assert.equal(errors.length, 0, errors.join('\n'))
       humanTurns += 1
     }
-    console.log(`${setup}: 10 human turns + 10 AI replies, level 2, file:// reload, no console/page errors`)
+    console.log(`${setup}: 10 human turns + 10 AI replies, level 2, staging/cancel/destination checks, file:// reload, no console/page errors`)
     // Red starts with a Silver AI move; reload while that search/animation is pending.
     await openNewGame(page, state)
     await page.selectOption('#computer-side', '1')

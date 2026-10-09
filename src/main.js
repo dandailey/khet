@@ -7,6 +7,8 @@ import * as GameSync from './game/gameSync.js'
 import { LEVELS, applyMove, fromKFEN, newGame, toKFEN } from '../packages/khet-engine/src/index.ts'
 import { engineMoveToGameAction, gameActionToEngineMove, gameStateToKFEN, kfenToBoard } from './ai/bridge.js'
 import AIWorker from './ai/ai-worker.js?worker&inline'
+import { applyBoardAction, actionFromTurn } from './game/moves.js'
+import { animationMs } from './game/animation.js'
 import { CARDINAL_VECTORS, computeLaserPath as traceGameLaser, findSphinx } from './game/laser.js'
 
 // Direction helpers (clockwise starting at north)
@@ -22,7 +24,6 @@ const DIRECTIONS = {
 }
 
 const LASER_THICKNESS_PERCENT = 8.57 // Percentage of square size (6/70 * 100)
-const LASER_DURATION = 1500
 const BOARD_ROWS = 8
 const BOARD_COLS = 10
 
@@ -98,11 +99,15 @@ let turnOverlayVisible = false
 let aiWorker = null
 let aiThinking = false
 let aiFailed = false
-let applyingComputerMove = false
 let turnInProgress = false
 let actionLaserTimeout = null
 let gameOverOverlayTimeout = null
 let pendingEngineTurn = null
+let stagedAction = null
+let stagedBoard = null
+let lastMove = null
+let activeMoveAnimations = []
+let replayingOnlineMove = false
 
 function cancelComputerTurn() {
   if (aiWorker) aiWorker.terminate()
@@ -112,6 +117,12 @@ function cancelComputerTurn() {
   turnInProgress = false
   pendingEngineTurn = null
   pendingMoveInfo = null
+  stagedAction = null
+  stagedBoard = null
+  lastMove = null
+  replayingOnlineMove = false
+  clearOpponentAnimation()
+  updateMoveConfirmation()
   for (const timer of [actionLaserTimeout, activeLaserTimeout, gameOverOverlayTimeout]) {
     if (timer) clearTimeout(timer)
   }
@@ -131,7 +142,7 @@ function updateComputerStatus() {
 
 function canPerformAction() {
   if (gameState.gameOver || laserActive || turnInProgress || aiThinking) return false
-  return applyingComputerMove || ensureLocalTurn()
+  return ensureLocalTurn()
 }
 
 // Capture the engine's entire turn (action plus laser) before the UI mutates pieces.
@@ -185,18 +196,12 @@ function maybeStartComputerTurn() {
       try {
         if (data.error || !data.move) throw new Error(data.error || 'No computer move')
         const action = engineMoveToGameAction(data.move, gameState)
-        applyingComputerMove = true
-        selectPiece(action.from.row, action.from.col, gameState.board[action.from.row][action.from.col])
-        if (action.kind === 'rotate') {
-          rotatePiece(action.from.row, action.from.col, action.direction === 'cw' ? 'right' : 'left')
-        } else {
-          movePiece(action.from.row, action.from.col, action.to.row, action.to.col)
-        }
+        const moveInfo = moveInfoForAction(action)
+        prepareEngineTurn(action)
+        animateOpponentAction(action, () => handleFireLaser(moveInfo))
         updateComputerStatus()
       } catch {
         fail()
-      } finally {
-        applyingComputerMove = false
       }
     }
     const seed = crypto.getRandomValues(new Uint32Array(1))[0]
@@ -580,6 +585,9 @@ function startLocalGame(setup, computer = null) {
 // Render the game board
 function renderBoard() {
   const boardElement = document.getElementById('game-board')
+  updateMoveConfirmation()
+  boardElement.dataset.lastMove = lastMove ? JSON.stringify(lastMove) : ''
+  boardElement.style.setProperty('--laser-duration', `${animationMs('laserMs')}ms`)
   boardElement.innerHTML = ''
   ensureLaserLayer()
   // Don't clear laser layer if game is over (keep winning laser path visible)
@@ -615,7 +623,10 @@ function renderBoard() {
       }
       
       // Add piece if present
-      const piece = gameState.board[row][col]
+      const piece = (stagedBoard || gameState.board)[row][col]
+      if (lastMove && [lastMove.from, lastMove.to].some(point => point && point.row === row && point.col === col)) {
+        square.classList.add('last-move')
+      }
       if (piece) {
         const pieceContainer = document.createElement('div')
         pieceContainer.className = 'piece-container'
@@ -644,6 +655,17 @@ function renderBoard() {
         }
       }
       
+      if (stagedAction && (stagedAction.from.row === row && stagedAction.from.col === col ||
+          stagedAction.kind === 'swap' && stagedAction.to.row === row && stagedAction.to.col === col)) {
+        const ghost = document.createElement('div')
+        ghost.className = 'piece-container staged-ghost'
+        if (rotate) ghost.style.transform = 'rotate(180deg)'
+        const original = gameState.board[row][col]
+        ghost.innerHTML = `<div class="piece player${original.player}">${getPieceSVG({ ...original, facing: transformFacing(original.facing) })}</div>`
+        ghost.setAttribute('aria-hidden', 'true')
+        square.appendChild(ghost)
+        square.classList.add('staged-origin')
+      }
       boardElement.appendChild(square)
     }
   }
@@ -939,6 +961,9 @@ function setupEventListeners() {
     resetGameBtn.addEventListener('click', handleResetGame)
     playAgainBtn.addEventListener('click', handlePlayAgain)
     document.addEventListener('click', handleDocumentClick)
+    document.getElementById('fire-laser').addEventListener('click', confirmStagedMove)
+    document.getElementById('cancel-move').addEventListener('click', cancelStagedMove)
+    document.addEventListener('keydown', handleMoveKeydown)
     
     const levelSelect = document.getElementById('computer-level')
     for (const { level, name } of LEVELS) {
@@ -1118,8 +1143,17 @@ function handleSquareClick(event) {
   }
   
   // Get original coordinates (already stored correctly in dataset)
-  const row = parseInt(square.dataset.row)
-  const col = parseInt(square.dataset.col)
+  let row = parseInt(square.dataset.row)
+  let col = parseInt(square.dataset.col)
+  // A staged piece at its destination still selects its original source.
+  if (stagedAction) {
+    const action = stagedAction
+    if (action.kind !== 'rotate' && row === action.to.row && col === action.to.col) {
+      row = action.from.row
+      col = action.from.col
+    }
+    cancelStagedMove()
+  }
   const piece = gameState.board[row][col]
   
   console.log(`Clicked square (${row}, ${col})`)
@@ -1331,118 +1365,123 @@ function removePieceControls() {
   })
 }
 
-// Move a piece
+// Human input only stages an action; Fire is the sole commit point.
 function movePiece(fromRow, fromCol, toRow, toCol) {
   if (!canPerformAction()) return
-  const piece = gameState.board[fromRow][fromCol]
-  const targetPiece = gameState.board[toRow][toCol]
-  prepareEngineTurn({ kind: targetPiece ? 'swap' : 'move', from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol } })
-  turnInProgress = true
-  updateComputerStatus()
-  
-  // Store move info for turn logging
-  const moveInfo = {
-    from: { row: fromRow, col: fromCol },
-    to: { row: toRow, col: toCol },
-    piece: piece.type,
-    swap: piece.type === 'scarab' && targetPiece
-  }
-  
-  // Handle scarab swap
-  if (piece.type === 'scarab' && targetPiece) {
-    gameState.board[toRow][toCol] = piece
-    gameState.board[fromRow][fromCol] = targetPiece
-  } else {
-    // Regular move
-    gameState.board[toRow][toCol] = piece
-    gameState.board[fromRow][fromCol] = null
-  }
-  
-  // Clear selection, render the board to show the move, then fire laser
-  clearSelection()
-  renderBoard()
-  
-  // Use setTimeout to ensure the DOM updates before firing laser
-  actionLaserTimeout = setTimeout(() => {
-    handleFireLaser(moveInfo)
-  }, 50)
+  const target = gameState.board[toRow][toCol]
+  stageAction({ kind: target ? 'swap' : 'move', from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol } })
 }
 
-// Rotate a piece
 function rotatePiece(row, col, direction) {
   if (!canPerformAction()) return
-  const piece = gameState.board[row][col]
-  prepareEngineTurn({ kind: 'rotate', from: { row, col }, direction: direction === 'right' ? 'cw' : 'ccw' })
-  turnInProgress = true
-  updateComputerStatus()
-  const currentFacing = piece.facing
-  
-  let newFacing = currentFacing
-  
-  // Different pieces have different rotation rules
-  if (piece.type === 'sphinx') {
-    // Sphinx: can only rotate between two directions based on position
-    // Top-left corner (0,0): E <-> S
-    // Bottom-right corner (7,9): W <-> N
-    if (row === 0 && col === 0) {
-      // Red sphinx in top-left: toggle between E and S
-      newFacing = currentFacing === 'E' ? 'S' : 'E'
-    } else if (row === 7 && col === 9) {
-      // Silver sphinx in bottom-right: toggle between W and N
-      newFacing = currentFacing === 'W' ? 'N' : 'W'
-    }
-  } else if (piece.type === 'anubis') {
-    // Anubis: only cardinal directions (N, E, S, W) - 90° rotations
-    const cardinalRotations = ['N', 'E', 'S', 'W']
-    const currentIndex = cardinalRotations.indexOf(currentFacing)
-    
-    if (direction === 'left') {
-      newFacing = cardinalRotations[(currentIndex - 1 + cardinalRotations.length) % cardinalRotations.length]
-    } else {
-      newFacing = cardinalRotations[(currentIndex + 1) % cardinalRotations.length]
-    }
-  } else if (piece.type === 'pyramid') {
-    // Pyramids: only diagonal directions (NE, SE, SW, NW) - 90° rotations
-    const diagonalRotations = ['NE', 'SE', 'SW', 'NW']
-    const currentIndex = diagonalRotations.indexOf(currentFacing)
-    
-    if (direction === 'left') {
-      newFacing = diagonalRotations[(currentIndex - 1 + diagonalRotations.length) % diagonalRotations.length]
-    } else {
-      newFacing = diagonalRotations[(currentIndex + 1) % diagonalRotations.length]
-    }
-  } else if (piece.type === 'scarab') {
-    // Scarabs: flip between two orientations (NE/SW or NW/SE)
-    // They're double-mirrored, so they effectively have only 2 positions
-    if (currentFacing === 'NE') {
-      newFacing = 'SW'
-    } else if (currentFacing === 'SW') {
-      newFacing = 'NE'
-    } else if (currentFacing === 'NW') {
-      newFacing = 'SE'
-    } else if (currentFacing === 'SE') {
-      newFacing = 'NW'
-    }
-  }
-  
-  piece.facing = newFacing
-  
-  // Store rotation info for turn logging
-  const moveInfo = {
-    rotation: true,
-    piece: piece.type,
-    from: { row, col },
-    direction: direction
-  }
-  
-  // Clear selection, render the board to show the rotation, then fire laser
+  stageAction({ kind: 'rotate', from: { row, col }, to: { row, col }, direction: direction === 'right' ? 'cw' : 'ccw' })
+}
+
+function stageAction(action) {
+  clearSelection()
+  stagedAction = action
+  stagedBoard = applyBoardAction(gameState.board, action)
+  lastMove = null
+  renderBoard()
+}
+
+function updateMoveConfirmation() {
+  document.getElementById('move-confirmation').classList.toggle('hidden', !stagedAction)
+}
+
+function cancelStagedMove() {
+  stagedAction = null
+  stagedBoard = null
   clearSelection()
   renderBoard()
-  
-  // Use setTimeout to ensure the DOM updates before firing laser
+}
+
+function handleMoveKeydown(event) {
+  if (!stagedAction || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return
+  if (event.target.closest('input, select, textarea, [contenteditable="true"], [role="dialog"]') ||
+      document.querySelector('.game-over-overlay:not(.hidden), .qr-overlay:not(.hidden), .invite-modal:not(.hidden)')) return
+  if (event.key === 'Enter' || event.key === 'Escape') {
+    event.preventDefault()
+    if (event.key === 'Enter') confirmStagedMove()
+    else cancelStagedMove()
+  }
+}
+
+function moveInfoForAction(action) {
+  const piece = gameState.board[action.from.row][action.from.col]
+  const player = gameState.currentPlayer === RED ? 'red' : 'silver'
+  return action.kind === 'rotate'
+    ? { player, rotation: true, piece: piece?.type, from: action.from, direction: action.direction === 'cw' ? 'right' : 'left' }
+    : { player, from: action.from, to: action.to, piece: piece?.type, swap: action.kind === 'swap' }
+}
+
+function confirmStagedMove() {
+  if (!stagedAction || !canPerformAction()) return
+  const action = stagedAction
+  const moveInfo = moveInfoForAction(action)
+  prepareEngineTurn(action)
+  stagedAction = null
+  stagedBoard = null
+  clearSelection()
+  turnInProgress = true
+  lastMove = action
+  gameState.board = applyBoardAction(gameState.board, action)
+  updateComputerStatus()
+  renderBoard()
+  actionLaserTimeout = setTimeout(() => handleFireLaser(moveInfo), animationMs('fireDelayMs'))
+}
+
+function clearOpponentAnimation() {
+  for (const animation of activeMoveAnimations) animation.cancel()
+  activeMoveAnimations = []
+  document.querySelectorAll('.move-animation').forEach(element => element.remove())
+  document.querySelectorAll('.animating-piece').forEach(element => element.classList.remove('animating-piece'))
+}
+
+// Keep the board unchanged beneath overlay copies until their motion finishes.
+function animateOpponentAction(action, fireLaser) {
+  stagedAction = null
+  stagedBoard = null
+  clearSelection()
+  turnInProgress = true
+  lastMove = action
+  updateComputerStatus()
+  renderBoard()
   actionLaserTimeout = setTimeout(() => {
-    handleFireLaser(moveInfo)
-  }, 50)
+    const duration = animationMs(action.kind === 'rotate' ? 'rotateMs' : 'moveMs')
+    const board = document.getElementById('game-board')
+    const source = document.querySelector(`[data-row="${action.from.row}"][data-col="${action.from.col}"]`)
+    const target = document.querySelector(`[data-row="${action.to.row}"][data-col="${action.to.col}"]`)
+    if (gameState.board[action.from.row][action.from.col].type === 'sphinx') {
+      document.querySelector('.laser-tip-glow')?.remove()
+    }
+    const slide = (origin, destination, lane = 0) => {
+      const container = origin.querySelector('.piece-container')
+      const overlay = document.createElement('div')
+      overlay.className = 'move-animation'
+      overlay.setAttribute('aria-hidden', 'true')
+      Object.assign(overlay.style, { left: `${origin.offsetLeft}px`, top: `${origin.offsetTop}px`, width: `${origin.offsetWidth}px`, height: `${origin.offsetHeight}px` })
+      overlay.appendChild(container.cloneNode(true))
+      board.appendChild(overlay)
+      container.classList.add('animating-piece')
+      const dx = destination.offsetLeft - origin.offsetLeft
+      const dy = destination.offsetTop - origin.offsetTop
+      const frames = action.kind === 'rotate'
+        ? [{ transform: 'rotate(0deg)' }, { transform: `rotate(${action.direction === 'cw' ? 90 : -90}deg)` }]
+        : [{ transform: 'translate(0, 0)' },
+          { transform: `translate(${dx / 2 - dy * lane}px, ${dy / 2 + dx * lane}px)` },
+          { transform: `translate(${dx}px, ${dy}px)` }]
+      activeMoveAnimations.push(overlay.animate(frames, { duration, easing: 'ease-in-out', fill: 'forwards' }))
+    }
+    slide(source, target, action.kind === 'swap' ? 0.18 : 0)
+    if (action.kind === 'swap') slide(target, source, 0.18)
+    actionLaserTimeout = setTimeout(() => {
+      clearOpponentAnimation()
+      gameState.board = applyBoardAction(gameState.board, action)
+      renderBoard()
+      actionLaserTimeout = setTimeout(fireLaser, animationMs('holdMs'))
+    }, duration)
+  }, animationMs('highlightMs'))
 }
 
 // End current player's turn
@@ -1450,7 +1489,6 @@ function endTurn(moveInfo = null) {
   turnInProgress = false
   gameState.ply = (gameState.ply ?? 0) + 1
   gameState.actionTaken = true
-  const previousPlayer = gameState.currentPlayer
   gameState.currentPlayer = gameState.currentPlayer === RED ? SILVER : RED
   checkComputerConsistency()
   renderBoard()
@@ -1468,7 +1506,7 @@ function endTurn(moveInfo = null) {
 let pendingMoveInfo = null
 
 // Handle laser firing
-function handleFireLaser(moveInfo = null) {
+function handleFireLaser(moveInfo = null, onComplete = null) {
   if (gameState.gameOver) return
   if (laserActive) return
   
@@ -1477,7 +1515,8 @@ function handleFireLaser(moveInfo = null) {
   
   const path = computeLaserPath()
   if (!path || path.length === 0) {
-    endTurn(moveInfo)
+    if (onComplete) onComplete()
+    else endTurn(moveInfo)
     return
   }
 
@@ -1508,6 +1547,11 @@ function handleFireLaser(moveInfo = null) {
     laserActive = false
     // Update laser tip glow back to normal state
     updateLaserTipGlow()
+    if (onComplete) {
+      pendingMoveInfo = null
+      onComplete()
+      return
+    }
     if (gameState.gameOver) {
       turnInProgress = false
       gameState.ply = (gameState.ply ?? 0) + 1
@@ -1516,18 +1560,19 @@ function handleFireLaser(moveInfo = null) {
       updateUrlHash()
       // Show the game over overlay after a brief delay to let the laser remain visible
       stopSyncPolling()
+      const completedMove = pendingMoveInfo
       gameOverOverlayTimeout = setTimeout(() => {
         showGameOverOverlay()
         // Final sync after game over
         if (syncContext.enabled) {
-          endTurnAndSync(pendingMoveInfo)
+          endTurnAndSync(completedMove)
         }
-      }, 800)
+      }, animationMs('gameOverMs'))
     } else {
       endTurn(pendingMoveInfo)
     }
     pendingMoveInfo = null
-  }, LASER_DURATION)
+  }, animationMs('laserMs'))
 }
 
 function computeLaserPath() {
@@ -1638,7 +1683,7 @@ function handleLaserHit(endpoint) {
     gameState.winner = hitPiece.player === RED ? SILVER : RED
     // Overlay will be shown after the laser animation in handleFireLaser
     persistLaserPath()
-    updateUrlHash()
+    if (!replayingOnlineMove) updateUrlHash()
     // Stop polling when game ends
     stopSyncPolling()
   }
@@ -1683,7 +1728,7 @@ function addDestructionAnimation(row, col) {
     // Use percentage of square size
     const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5
     const distancePercent = (35.7 + Math.random() * 21.4) / 100 // 35.7-57.1% of square
-    const duration = 800 + Math.random() * 400 // 800-1200ms duration
+    const duration = animationMs('particleMs') + Math.random() * animationMs('particleSpreadMs') // 800-1200ms duration
     
     // Calculate end position as percentage of board dimensions
     const endXPercent = Math.cos(angle) * distancePercent * squareWidthPercent
@@ -1709,7 +1754,7 @@ function addDestructionAnimation(row, col) {
     if (particleContainer.parentNode) {
       particleContainer.remove()
     }
-  }, 1500) // Remove after 1.5 seconds
+  }, animationMs('laserMs'))
 }
 
 function ensureLaserLayer() {
@@ -1752,6 +1797,9 @@ function updateBoardDimensions() {
   const appPadding = parseFloat(appStyles.paddingTop || '0') + parseFloat(appStyles.paddingBottom || '0')
   const headerHeight = headerElement ? headerElement.offsetHeight + parseFloat(window.getComputedStyle(headerElement).marginBottom || '0') : 0
   const controlsHeight = controlsElement ? controlsElement.offsetHeight : 0
+  const confirmation = document.getElementById('move-confirmation')
+  // Reserve this space throughout the turn so staging never resizes the board.
+  const confirmationHeight = Math.max(44, confirmation?.offsetHeight || 0)
 
   // Calculate available space from viewport, not from main element (which is constrained by board)
   const viewportHeight = window.innerHeight
@@ -1765,7 +1813,7 @@ function updateBoardDimensions() {
   const bodyPaddingRight = parseFloat(bodyStyles.paddingRight || '0')
   
   // Available height = viewport - body padding - app padding - header - controls - gap
-  const availableHeight = Math.max(viewportHeight - bodyPaddingTop - bodyPaddingBottom - appPadding - headerHeight - controlsHeight - gap, 0)
+  const availableHeight = Math.max(viewportHeight - bodyPaddingTop - bodyPaddingBottom - appPadding - headerHeight - controlsHeight - confirmationHeight - gap * 2, 0)
   // Available width = viewport - body padding - app padding
   const availableWidth = Math.max(viewportWidth - bodyPaddingLeft - bodyPaddingRight - appPadding, 0)
 
@@ -1825,7 +1873,7 @@ function getSquareCenter(row, col, boardRect) {
 }
 
 function findCurrentPlayerSphinx() {
-  return findSphinx(gameState)
+  return findSphinx(stagedBoard ? { ...gameState, board: stagedBoard } : gameState)
 }
 
 // Reset and play again both offer the same new-game choices.
@@ -2023,9 +2071,7 @@ async function pushSyncState() {
     if (result && result.type === 'conflict') {
       // Handle conflict
       const remoteState = decodeFullState(result.current.state_blob)
-      gameState = remoteState
-      renderBoard()
-      updateSyncStatusUI()
+      receiveOnlineState(remoteState)
       showToast('Game was updated by opponent', 'info')
     }
     
@@ -2058,28 +2104,52 @@ function startSyncPolling() {
       const wasWaiting = !gameState.sync.silverId && syncContext.isHost
       const opponentJoined = wasWaiting && remoteState.sync.silverId
       
-      // Check for new turns
-      const newTurns = remoteState.sync.lastTurnId > gameState.sync.lastTurnId
-      
-      // Update state
-      gameState = remoteState
-      
       if (opponentJoined) {
         showToast('Opponent joined the game!', 'success')
         hideInviteModal()
       }
-      
-      if (newTurns && isOpponentsTurn() === false) {
-        // It just became our turn
-        showTurnStartOverlay()
-      }
-      
-      updateSyncStatusUI()
-      renderBoard()
+      receiveOnlineState(remoteState)
     } catch (error) {
       console.error('Failed to process sync update:', error)
     }
   })
+}
+
+// Replay one newly received opponent action against the previous board, then
+// adopt the server's final state. Replays never record or push another turn.
+function receiveOnlineState(remoteState) {
+  if (replayingOnlineMove) return
+  const turn = remoteState.sync.turnHistory.at(-1)
+  const newOpponentTurn = remoteState.sync.lastTurnId === gameState.sync.lastTurnId + 1 &&
+    turn && isOpponentsTurn() && !turnInProgress
+  const action = newOpponentTurn ? actionFromTurn(turn, gameState.board) : null
+  const finish = () => {
+    replayingOnlineMove = false
+    turnInProgress = false
+    laserActive = false
+    stagedAction = null
+    stagedBoard = null
+    gameState = remoteState
+    gameState.computer = null
+    gameState.selectedPiece = null
+    gameState.selectedSquare = null
+    const winningLaser = gameState.gameOver ? laserLayerElement?.innerHTML : null
+    renderBoard()
+    if (winningLaser) laserLayerElement.innerHTML = winningLaser
+    updateComputerStatus()
+    updateSyncStatusUI()
+    saveSyncStorage()
+    if (gameState.gameOver) showGameOverOverlay()
+    else if (newOpponentTurn && isLocalPlayersTurn()) showTurnStartOverlay()
+  }
+  if (action) {
+    hideTurnOverlay()
+    replayingOnlineMove = true
+    animateOpponentAction(action, () => handleFireLaser(turn, finish))
+  } else {
+    cancelComputerTurn()
+    finish()
+  }
 }
 
 /**
@@ -2093,6 +2163,12 @@ function stopSyncPolling() {
  * Disable online play (return to local mode)
  */
 function disableOnlinePlay() {
+  if (replayingOnlineMove) {
+    cancelComputerTurn()
+    clearSelection()
+    renderBoard()
+  }
+  if (stagedAction) cancelStagedMove()
   syncContext.enabled = false
   syncContext.sessionId = null
   syncContext.localSide = null
