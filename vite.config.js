@@ -3,6 +3,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 
 export default defineConfig({
   plugins: [viteSingleFile()],
+  worker: { format: 'iife' },
   build: {
     outDir: 'dist',
     cssCodeSplit: false,

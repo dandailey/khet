@@ -14,6 +14,36 @@
       
       <main>
         <div id="game-board" class="board"></div>
+
+        <div id="new-game-overlay" class="game-over-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="new-game-title">
+          <form id="new-game-form" class="game-over-content new-game-content">
+            <h2 id="new-game-title">New Game</h2>
+            <label for="new-game-setup">Setup</label>
+            <select id="new-game-setup">
+              <option value="classic">Classic</option>
+              <option value="imhotep">Imhotep</option>
+              <option value="dynasty">Dynasty</option>
+            </select>
+            <label for="new-game-mode">Opponent</label>
+            <select id="new-game-mode">
+              <option value="computer">vs Computer</option>
+              <option value="local">Human player</option>
+            </select>
+            <div id="computer-options" class="hidden">
+              <label for="computer-side">Your side</label>
+              <select id="computer-side">
+                <option value="2">Silver (moves first)</option>
+                <option value="1">Red</option>
+              </select>
+              <label for="computer-level">Level</label>
+              <select id="computer-level"></select>
+            </div>
+            <div class="new-game-buttons">
+              <button id="cancel-new-game" type="button" class="btn btn-secondary">Cancel</button>
+              <button type="submit" class="btn btn-primary">Start Game</button>
+            </div>
+          </form>
+        </div>
         
         <!-- Game Over Overlay -->
         <div id="game-over-overlay" class="game-over-overlay hidden">
@@ -24,6 +54,7 @@
         </div>
         
         <div class="controls">
+          <span id="computer-status" class="sync-indicator hidden" role="status" aria-live="polite"></span>
           <span id="sync-indicator" class="sync-indicator hidden">Offline</span>
           <div class="share-menu-container">
             <button id="share-menu-btn" class="btn btn-secondary">Share</button>

@@ -22,9 +22,13 @@ function functionSource(source, name) {
 
 function liveRules(state) {
   const reservations = main.slice(main.indexOf('const RESERVED_RED'), main.indexOf('// Game state'))
-  const context = vm.createContext({ gameState: state, clearSelection() {}, renderBoard() {}, setTimeout() {} })
+  const context = vm.createContext({
+    gameState: state, newGame, toKFEN, kfenToBoard, turnInProgress: false,
+    clearSelection() {}, renderBoard() {}, setTimeout() {}, updateComputerStatus() {},
+    canPerformAction() { return true }, prepareEngineTurn() {}
+  })
   vm.runInContext(`const RED = 1, SILVER = 2;\n${reservations}\n` +
-    ['setPiece', 'setupClassicLayout', 'isValidMove', 'rotatePiece'].map(name => functionSource(main, name)).join('\n'), context)
+    ['setupLayout', 'setupClassicLayout', 'isValidMove', 'rotatePiece'].map(name => functionSource(main, name)).join('\n'), context)
   return context
 }
 

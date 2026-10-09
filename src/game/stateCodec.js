@@ -3,6 +3,7 @@
 
 const RED = 1
 const SILVER = 2
+const SETUP_NAMES = ['classic', 'imhotep', 'dynasty']
 
 // Encoding lookup: piece {type, player, facing, position} -> 5-bit value (1-26)
 function encodePiece(piece, row, col) {
@@ -150,7 +151,7 @@ export function encodeState(gameState) {
   }
 
   // Header: version (4) + currentPlayer (1) + gameOver (1) + winner (2) + pieceCount (6) = 14 bits
-  const version = 1
+  const version = gameState.setup || gameState.computer ? 2 : 1
   const currentPlayerBit = gameState.currentPlayer === RED ? 1 : 0
   const gameOverBit = gameState.gameOver ? 1 : 0
   const winnerBits = gameState.winner === RED ? 1 : gameState.winner === SILVER ? 2 : 0
@@ -169,6 +170,26 @@ export function encodeState(gameState) {
     writeBits(pieceValue, 5)
   }
 
+  // Version 2 preserves local new-game choices and the KFEN ply across reloads.
+  if (version === 2) {
+    const setup = SETUP_NAMES.indexOf(gameState.setup || 'classic')
+    const computer = gameState.computer
+    const ply = gameState.ply ?? 0
+    if (setup < 0 || !Number.isSafeInteger(ply) || ply < 0 || ply > 0xffffffff) {
+      throw new Error('Invalid game options')
+    }
+    if (computer && (![RED, SILVER].includes(computer.humanSide) ||
+        !Number.isInteger(computer.level) || computer.level < 1 || computer.level > 10)) {
+      throw new Error('Invalid computer options')
+    }
+    writeBits(setup, 2)
+    writeBits(computer ? 1 : 0, 1)
+    writeBits(computer?.humanSide === RED ? 1 : 0, 1)
+    writeBits(computer?.level || 1, 4)
+    // Write bytes separately: the bit buffer never needs more than 15 bits.
+    for (const shift of [24, 16, 8, 0]) writeBits((ply >>> shift) & 0xff, 8)
+  }
+
   // Flush remaining bits
   if (bitCount > 0) {
     bytes.push(bitBuffer << (8 - bitCount))
@@ -184,7 +205,7 @@ export function encodeState(gameState) {
  * Format: JSON with board state encoded as base64url
  */
 export function encodeFullState(gameState) {
-  const boardEncoded = encodeState(gameState)
+  const boardEncoded = encodeState({ ...gameState, computer: null })
   
   const fullState = {
     v: 2, // Version 2 = full state with sync
@@ -211,6 +232,7 @@ export function decodeFullState(encoded) {
     if (parsed.v === 2 && parsed.board) {
       // Version 2: full state with sync
       const boardState = decodeState(parsed.board)
+      boardState.computer = null // Online sessions are always human vs human.
       boardState.sync = parsed.sync || {
         redId: null,
         silverId: null,
@@ -225,6 +247,7 @@ export function decodeFullState(encoded) {
   } catch (jsonError) {
     // Not JSON, try legacy binary format
     const boardState = decodeState(encoded)
+    boardState.computer = null
     boardState.sync = {
       redId: null,
       silverId: null,
@@ -269,7 +292,7 @@ export function decodeState(encoded) {
 
     // Read header
     const version = readBits(4)
-    if (version !== 1) {
+    if (version !== 1 && version !== 2) {
       throw new Error(`Unsupported version: ${version}`)
     }
 
@@ -301,12 +324,25 @@ export function decodeState(encoded) {
       board[row][col] = piece
     }
 
+    const options = {}
+    if (version === 2) {
+      const setup = SETUP_NAMES[readBits(2)]
+      const hasComputer = readBits(1)
+      const humanSide = readBits(1) ? RED : SILVER
+      const level = readBits(4)
+      let ply = 0
+      for (let i = 0; i < 4; i += 1) ply = ply * 256 + readBits(8)
+      if (!setup || level < 1 || level > 10) throw new Error('Invalid game options')
+      Object.assign(options, { setup, computer: hasComputer ? { humanSide, level } : null, ply })
+    }
+
     // Build game state
     const currentPlayer = currentPlayerBit === 1 ? RED : SILVER
     const gameOver = gameOverBit === 1
     const winner = winnerBits === 1 ? RED : winnerBits === 2 ? SILVER : null
 
     return {
+      ...options,
       currentPlayer,
       board,
       gameOver,
@@ -319,4 +355,3 @@ export function decodeState(encoded) {
     throw new Error(`Failed to decode state: ${error.message}`)
   }
 }
-

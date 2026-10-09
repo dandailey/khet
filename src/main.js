@@ -4,6 +4,9 @@ import "./style.css"
 import { encodeState, decodeState, encodeFullState, decodeFullState } from './game/stateCodec.js'
 import QRCode from 'qrcode'
 import * as GameSync from './game/gameSync.js'
+import { LEVELS, applyMove, fromKFEN, newGame, toKFEN } from '../packages/khet-engine/src/index.ts'
+import { engineMoveToGameAction, gameActionToEngineMove, gameStateToKFEN, kfenToBoard } from './ai/bridge.js'
+import AIWorker from './ai/ai-worker.js?worker&inline'
 import { CARDINAL_VECTORS, computeLaserPath as traceGameLaser, findSphinx } from './game/laser.js'
 
 // Direction helpers (clockwise starting at north)
@@ -58,6 +61,9 @@ let gameState = {
   selectedPiece: null,
   selectedSquare: null,
   board: [],
+  setup: 'classic',
+  computer: null,
+  ply: 0,
   gameOver: false,
   winner: null,
   actionTaken: false, // Track if player has taken an action this turn
@@ -89,6 +95,116 @@ let laserActive = false
 let isLoadingFromHash = false
 let boardResizeObserver = null
 let turnOverlayVisible = false
+let aiWorker = null
+let aiThinking = false
+let aiFailed = false
+let applyingComputerMove = false
+let turnInProgress = false
+let actionLaserTimeout = null
+let gameOverOverlayTimeout = null
+let pendingEngineTurn = null
+
+function cancelComputerTurn() {
+  if (aiWorker) aiWorker.terminate()
+  aiWorker = null
+  aiThinking = false
+  aiFailed = false
+  turnInProgress = false
+  pendingEngineTurn = null
+  pendingMoveInfo = null
+  for (const timer of [actionLaserTimeout, activeLaserTimeout, gameOverOverlayTimeout]) {
+    if (timer) clearTimeout(timer)
+  }
+  actionLaserTimeout = null
+  activeLaserTimeout = null
+  gameOverOverlayTimeout = null
+  laserActive = false
+  updateComputerStatus()
+}
+
+function updateComputerStatus() {
+  const indicator = document.getElementById('computer-status')
+  indicator.classList.toggle('hidden', !aiThinking)
+  indicator.textContent = aiThinking ? 'Computer is thinking...' : ''
+  document.getElementById('game-board').setAttribute('aria-busy', String(aiThinking || turnInProgress))
+}
+
+function canPerformAction() {
+  if (gameState.gameOver || laserActive || turnInProgress || aiThinking) return false
+  return applyingComputerMove || ensureLocalTurn()
+}
+
+// Capture the engine's entire turn (action plus laser) before the UI mutates pieces.
+function prepareEngineTurn(action) {
+  if (!gameState.computer || syncContext.enabled) return
+  const before = gameStateToKFEN(gameState)
+  const move = gameActionToEngineMove(action, gameState)
+  pendingEngineTurn = { move, expected: toKFEN(applyMove(fromKFEN(before), move)) }
+}
+
+function checkComputerConsistency() {
+  if (!pendingEngineTurn) return
+  const actual = gameStateToKFEN(gameState)
+  const { expected, move } = pendingEngineTurn
+  if (actual.split(' ')[0] !== expected.split(' ')[0]) {
+    console.error('Computer turn placement mismatch', { actual, expected, move })
+  }
+  pendingEngineTurn = null
+}
+
+function maybeStartComputerTurn() {
+  if (!gameState.computer || syncContext.enabled || gameState.gameOver || aiFailed ||
+      aiThinking || turnInProgress || gameState.currentPlayer === gameState.computer.humanSide) return
+  aiThinking = true
+  clearSelection()
+  updateComputerStatus()
+  const fail = () => {
+    if (aiWorker) aiWorker.terminate()
+    aiWorker = null
+    aiThinking = false
+    aiFailed = true
+    updateComputerStatus()
+    showToast('Computer unavailable. You can play the remaining turns locally.', 'error')
+  }
+  try {
+    const worker = new AIWorker()
+    aiWorker = worker
+    worker.onerror = (event) => {
+      event.preventDefault()
+      if (aiWorker !== worker) return
+      fail()
+    }
+    worker.onmessageerror = () => {
+      if (aiWorker === worker) fail()
+    }
+    worker.onmessage = ({ data }) => {
+      if (aiWorker !== worker) return
+      worker.terminate()
+      aiWorker = null
+      aiThinking = false
+      try {
+        if (data.error || !data.move) throw new Error(data.error || 'No computer move')
+        const action = engineMoveToGameAction(data.move, gameState)
+        applyingComputerMove = true
+        selectPiece(action.from.row, action.from.col, gameState.board[action.from.row][action.from.col])
+        if (action.kind === 'rotate') {
+          rotatePiece(action.from.row, action.from.col, action.direction === 'cw' ? 'right' : 'left')
+        } else {
+          movePiece(action.from.row, action.from.col, action.to.row, action.to.col)
+        }
+        updateComputerStatus()
+      } catch {
+        fail()
+      } finally {
+        applyingComputerMove = false
+      }
+    }
+    const seed = crypto.getRandomValues(new Uint32Array(1))[0]
+    worker.postMessage({ kfen: gameStateToKFEN(gameState), level: gameState.computer.level, seed })
+  } catch {
+    fail()
+  }
+}
 
 // Dev mode: enable history-based state management for testing encoding/decoding
 // Set via URL parameter: ?dev=true or localStorage: khet-dev-mode=true
@@ -108,6 +224,9 @@ if (typeof window !== 'undefined') {
  * Check if it's the local player's turn
  */
 function isLocalPlayersTurn() {
+  if (!syncContext.enabled && gameState.computer && !aiFailed) {
+    return gameState.currentPlayer === gameState.computer.humanSide
+  }
   if (!syncContext.enabled || !syncContext.localSide) {
     return true // Local mode - always your turn
   }
@@ -245,6 +364,7 @@ function shouldRotateBoard() {
   if (syncContext.enabled && syncContext.localSide) {
     return syncContext.localSide === 'red'
   }
+  if (gameState.computer && !aiFailed) return gameState.computer.humanSide === RED
   // In local mode, rotate when red is current player
   return gameState.currentPlayer === RED
 }
@@ -295,6 +415,7 @@ function transformFacing(facing) {
 
 // Initialize the game
 async function initGame(skipHash = false) {
+  cancelComputerTurn()
   console.log('Initializing Khet game...')
   
   // Initialize GameSync service detection (non-blocking)
@@ -368,11 +489,17 @@ async function initGame(skipHash = false) {
       setupEventListeners()
       updateSyncStatusUI()
       console.log('Game loaded from URL hash!')
+      maybeStartComputerTurn()
       return
     }
   }
   
   // Create empty board (8 rows x 10 columns)
+  gameState.gameOver = false
+  gameState.winner = null
+  gameState.selectedPiece = null
+  gameState.selectedSquare = null
+  gameState.computer = null
   gameState.board = Array(8)
     .fill(null)
     .map(() => Array(10).fill(null))
@@ -397,58 +524,57 @@ async function initGame(skipHash = false) {
   updateUrlHash()
   
   updateSyncStatusUI()
+  showNewGameOptions()
   console.log('Game initialized!')
 }
 
-// Helper to place a piece on the board
-function setPiece(row, col, type, player, facing = 'N') {
-  gameState.board[row][col] = { type, player, facing }
+// All starting layouts come from the engine's SETUPS through the bridge.
+function setupLayout(setup = 'classic') {
+  Object.assign(gameState, kfenToBoard(toKFEN(newGame(setup))))
+  gameState.setup = setup
 }
 
-// Set up classic starting layout (Khet 2.0)
 function setupClassicLayout() {
-  // Row 0 (top)
-  setPiece(0, 0, 'sphinx', RED, 'S')  // Top-left corner: Red Sphinx faces South
-  setPiece(0, 4, 'anubis', RED, 'S')
-  setPiece(0, 5, 'pharaoh', RED)
-  setPiece(0, 6, 'anubis', RED, 'S')
-  setPiece(0, 7, 'pyramid', RED, 'SE')
+  setupLayout('classic')
+}
 
-  // Row 1
-  setPiece(1, 2, 'pyramid', RED, 'SW')
+let newGameOnline = false
 
-  // Row 2
-  setPiece(2, 3, 'pyramid', SILVER, 'NW')
+function showNewGameOptions(online = false) {
+  newGameOnline = online
+  document.getElementById('new-game-title').textContent = online ? 'New Online Game' : 'New Game'
+  document.getElementById('new-game-setup').value = gameState.setup || 'classic'
+  const mode = document.getElementById('new-game-mode')
+  // Default to the computer opponent: most games are played against the AI.
+  mode.value = online ? 'local' : 'computer'
+  mode.disabled = online
+  document.getElementById('computer-side').value = gameState.computer?.humanSide || SILVER
+  document.getElementById('computer-level').value = gameState.computer?.level || 5
+  updateComputerOptions()
+  document.getElementById('new-game-overlay').classList.remove('hidden')
+}
 
-  // Row 3
-  setPiece(3, 0, 'pyramid', RED, 'NE')
-  setPiece(3, 2, 'pyramid', SILVER, 'SW')
-  // Laser mapping: NE/SE = / (N entry exits E); NW/SW = \ (N entry exits W).
-  setPiece(3, 4, 'scarab', RED, 'NW') // C\
-  setPiece(3, 5, 'scarab', RED, 'NE') // C/
-  setPiece(3, 7, 'pyramid', RED, 'SE')
-  setPiece(3, 9, 'pyramid', SILVER, 'NW')
+function updateComputerOptions() {
+  document.getElementById('computer-options').classList.toggle('hidden',
+    document.getElementById('new-game-mode').value !== 'computer')
+}
 
-  // Row 4
-  setPiece(4, 0, 'pyramid', RED, 'SE')
-  setPiece(4, 2, 'pyramid', SILVER, 'NW')
-  setPiece(4, 4, 'scarab', SILVER, 'NE') // C/
-  setPiece(4, 5, 'scarab', SILVER, 'NW') // C\
-  setPiece(4, 7, 'pyramid', RED, 'NE')
-  setPiece(4, 9, 'pyramid', SILVER, 'SW')
-
-  // Row 5
-  setPiece(5, 6, 'pyramid', RED, 'SE')
-
-  // Row 6
-  setPiece(6, 7, 'pyramid', SILVER, 'NE')
-
-  // Row 7 (bottom)
-  setPiece(7, 2, 'pyramid', SILVER, 'NW')
-  setPiece(7, 3, 'anubis', SILVER, 'N')
-  setPiece(7, 4, 'pharaoh', SILVER)
-  setPiece(7, 5, 'anubis', SILVER, 'N')
-  setPiece(7, 9, 'sphinx', SILVER, 'N')  // Bottom-right corner: Silver Sphinx faces North
+function startLocalGame(setup, computer = null) {
+  cancelComputerTurn()
+  disableOnlinePlay()
+  gameState.gameOver = false
+  gameState.winner = null
+  gameState.actionTaken = false
+  gameState.selectedPiece = null
+  gameState.selectedSquare = null
+  gameState.computer = computer
+  gameState.sync = { redId: null, silverId: null, lastTurnId: 0, turnHistory: [] }
+  setupLayout(setup)
+  hideGameOverOverlay()
+  clearLaserLayer()
+  renderBoard()
+  updateUrlHash()
+  maybeStartComputerTurn()
 }
 
 // Render the game board
@@ -814,6 +940,29 @@ function setupEventListeners() {
     playAgainBtn.addEventListener('click', handlePlayAgain)
     document.addEventListener('click', handleDocumentClick)
     
+    const levelSelect = document.getElementById('computer-level')
+    for (const { level, name } of LEVELS) {
+      const option = document.createElement('option')
+      option.value = level
+      option.textContent = `${level} — ${name}`
+      levelSelect.appendChild(option)
+    }
+    document.getElementById('new-game-mode').addEventListener('change', updateComputerOptions)
+    document.getElementById('cancel-new-game').addEventListener('click', () => {
+      document.getElementById('new-game-overlay').classList.add('hidden')
+    })
+    document.getElementById('new-game-form').addEventListener('submit', (event) => {
+      event.preventDefault()
+      const setup = document.getElementById('new-game-setup').value
+      const computer = document.getElementById('new-game-mode').value === 'computer' ? {
+        humanSide: Number(document.getElementById('computer-side').value),
+        level: Number(document.getElementById('computer-level').value)
+      } : null
+      document.getElementById('new-game-overlay').classList.add('hidden')
+      if (newGameOnline) hostOnlineGame(setup)
+      else startLocalGame(setup, computer)
+    })
+
     // Share menu listeners
     const shareMenuBtn = document.getElementById('share-menu-btn')
     const shareMenu = document.getElementById('share-menu')
@@ -877,7 +1026,7 @@ function setupEventListeners() {
     if (playOnlineBtn) {
       playOnlineBtn.addEventListener('click', () => {
         hideShareMenu()
-        hostOnlineGame()
+        showNewGameOptions(true)
       })
     }
     
@@ -956,7 +1105,7 @@ function hideShareMenu() {
 
 // Handle square clicks
 function handleSquareClick(event) {
-  if (gameState.gameOver) return
+  if (gameState.gameOver || laserActive || turnInProgress || aiThinking) return
   if (!ensureLocalTurn("Wait for your opponent to finish their turn")) return
   
   const square = event.target.closest('.square')
@@ -1184,8 +1333,12 @@ function removePieceControls() {
 
 // Move a piece
 function movePiece(fromRow, fromCol, toRow, toCol) {
+  if (!canPerformAction()) return
   const piece = gameState.board[fromRow][fromCol]
   const targetPiece = gameState.board[toRow][toCol]
+  prepareEngineTurn({ kind: targetPiece ? 'swap' : 'move', from: { row: fromRow, col: fromCol }, to: { row: toRow, col: toCol } })
+  turnInProgress = true
+  updateComputerStatus()
   
   // Store move info for turn logging
   const moveInfo = {
@@ -1210,14 +1363,18 @@ function movePiece(fromRow, fromCol, toRow, toCol) {
   renderBoard()
   
   // Use setTimeout to ensure the DOM updates before firing laser
-  setTimeout(() => {
+  actionLaserTimeout = setTimeout(() => {
     handleFireLaser(moveInfo)
   }, 50)
 }
 
 // Rotate a piece
 function rotatePiece(row, col, direction) {
+  if (!canPerformAction()) return
   const piece = gameState.board[row][col]
+  prepareEngineTurn({ kind: 'rotate', from: { row, col }, direction: direction === 'right' ? 'cw' : 'ccw' })
+  turnInProgress = true
+  updateComputerStatus()
   const currentFacing = piece.facing
   
   let newFacing = currentFacing
@@ -1283,16 +1440,19 @@ function rotatePiece(row, col, direction) {
   renderBoard()
   
   // Use setTimeout to ensure the DOM updates before firing laser
-  setTimeout(() => {
+  actionLaserTimeout = setTimeout(() => {
     handleFireLaser(moveInfo)
   }, 50)
 }
 
 // End current player's turn
 function endTurn(moveInfo = null) {
+  turnInProgress = false
+  gameState.ply = (gameState.ply ?? 0) + 1
   gameState.actionTaken = true
   const previousPlayer = gameState.currentPlayer
   gameState.currentPlayer = gameState.currentPlayer === RED ? SILVER : RED
+  checkComputerConsistency()
   renderBoard()
   updateUrlHash()
   
@@ -1300,6 +1460,8 @@ function endTurn(moveInfo = null) {
   if (syncContext.enabled && moveInfo) {
     endTurnAndSync(moveInfo)
   }
+  updateComputerStatus()
+  maybeStartComputerTurn()
 }
 
 // Store move info between calls (set by handleFireLaser)
@@ -1314,7 +1476,10 @@ function handleFireLaser(moveInfo = null) {
   pendingMoveInfo = moveInfo
   
   const path = computeLaserPath()
-  if (!path || path.length === 0) return
+  if (!path || path.length === 0) {
+    endTurn(moveInfo)
+    return
+  }
 
   laserActive = true
   clearLaserLayer()
@@ -1344,9 +1509,14 @@ function handleFireLaser(moveInfo = null) {
     // Update laser tip glow back to normal state
     updateLaserTipGlow()
     if (gameState.gameOver) {
+      turnInProgress = false
+      gameState.ply = (gameState.ply ?? 0) + 1
+      checkComputerConsistency()
+      updateComputerStatus()
+      updateUrlHash()
       // Show the game over overlay after a brief delay to let the laser remain visible
       stopSyncPolling()
-      setTimeout(() => {
+      gameOverOverlayTimeout = setTimeout(() => {
         showGameOverOverlay()
         // Final sync after game over
         if (syncContext.enabled) {
@@ -1658,101 +1828,9 @@ function findCurrentPlayerSphinx() {
   return findSphinx(gameState)
 }
 
-// Handle game reset
+// Reset and play again both offer the same new-game choices.
 function handleResetGame() {
-  showResetConfirmationOverlay()
-}
-
-// Show reset confirmation overlay
-function showResetConfirmationOverlay() {
-  const overlay = document.getElementById('game-over-overlay')
-  const winnerText = document.getElementById('winner-text')
-  const playAgainBtn = document.getElementById('play-again-btn')
-  
-  winnerText.textContent = 'Are you sure you want to reset the game?'
-  
-  // Remove existing cancel button if it exists
-  const existingCancelBtn = document.querySelector('.game-over-content .btn-secondary')
-  if (existingCancelBtn) {
-    existingCancelBtn.remove()
-  }
-  
-  // Add cancel button first (left side)
-  const cancelBtn = document.createElement('button')
-  cancelBtn.textContent = 'Nevermind'
-  cancelBtn.className = 'btn btn-secondary'
-  cancelBtn.style.marginRight = '0.625em'
-  cancelBtn.onclick = hideResetConfirmationOverlay
-  
-  // Update play again button to be reset button (right side)
-  playAgainBtn.textContent = 'Reset Game'
-  playAgainBtn.onclick = confirmResetGame
-  
-  // Insert cancel button before the reset button
-  playAgainBtn.parentNode.insertBefore(cancelBtn, playAgainBtn)
-  
-  overlay.classList.remove('hidden')
-}
-
-// Hide reset confirmation overlay
-function hideResetConfirmationOverlay() {
-  const overlay = document.getElementById('game-over-overlay')
-  const playAgainBtn = document.getElementById('play-again-btn')
-  
-  // Restore original play again button
-  playAgainBtn.textContent = 'Play Again'
-  playAgainBtn.onclick = handlePlayAgain
-  
-  // Remove cancel button
-  const cancelBtn = document.querySelector('.game-over-content .btn-secondary')
-  if (cancelBtn) {
-    cancelBtn.remove()
-  }
-  
-  overlay.classList.add('hidden')
-}
-
-// Confirm reset game
-function confirmResetGame() {
-  hideResetConfirmationOverlay()
-  
-  console.log('Resetting game...')
-  
-  // Clear sync state
-  disableOnlinePlay()
-  
-  // Clear session_id from URL (handled by disableOnlinePlay but just in case)
-  const url = new URL(window.location.href)
-  url.searchParams.delete("session")
-  url.searchParams.delete("role")
-  
-  // Clear the hash so initGame doesn't reload old state
-  if (DEV_MODE) {
-    window.history.pushState(null, '', url.pathname + url.search)
-  } else {
-    window.history.replaceState(null, '', url.pathname + url.search)
-  }
-  
-  gameState.currentPlayer = SILVER  // Silver always goes first
-  gameState.selectedPiece = null
-  gameState.selectedSquare = null
-  gameState.gameOver = false
-  gameState.winner = null
-  gameState.actionTaken = false
-  
-  clearLaserLayer()
-  laserActive = false
-  if (activeLaserTimeout) {
-    clearTimeout(activeLaserTimeout)
-    activeLaserTimeout = null
-  }
-
-  // Initialize new game, skipping hash check
-  initGame(true)
-  
-  // Update hash with new initial state
-  updateUrlHash()
-  updateLaserTipGlow() // Ensure laser tip glow reflects new current player
+  showNewGameOptions()
 }
 
 // Show game over overlay
@@ -1782,39 +1860,7 @@ function hideGameOverOverlay() {
 // Handle play again button
 function handlePlayAgain() {
   hideGameOverOverlay()
-  
-  // Clear sync state
-  disableOnlinePlay()
-  
-  // Clear the hash so initGame doesn't reload old state
-  const url = new URL(window.location.href)
-  if (DEV_MODE) {
-    window.history.pushState(null, '', url.pathname + url.search)
-  } else {
-    window.history.replaceState(null, '', url.pathname + url.search)
-  }
-  
-  // Reset game state
-  gameState.currentPlayer = SILVER  // Silver always goes first
-  gameState.selectedPiece = null
-  gameState.selectedSquare = null
-  gameState.gameOver = false
-  gameState.winner = null
-  gameState.actionTaken = false
-  
-  clearLaserLayer()
-  laserActive = false
-  if (activeLaserTimeout) {
-    clearTimeout(activeLaserTimeout)
-    activeLaserTimeout = null
-  }
-
-  // Initialize new game, skipping hash check
-  initGame(true)
-  
-  // Update hash with new initial state
-  updateUrlHash()
-  updateLaserTipGlow() // Ensure laser tip glow reflects new current player
+  showNewGameOptions()
 }
 
 // =============================================================================
@@ -1895,13 +1941,14 @@ async function tryJoinSession(sessionCode, roleHint) {
 /**
  * Host a new online game
  */
-async function hostOnlineGame() {
+async function hostOnlineGame(setup = 'classic') {
   if (!syncContext.serviceAvailable) {
     showToast('Online play unavailable', 'error')
     return false
   }
   
   try {
+    cancelComputerTurn()
     const myId = GameSync.getClientId()
     
     // Reset game state
@@ -1919,7 +1966,8 @@ async function hostOnlineGame() {
       turnHistory: []
     }
     
-    setupClassicLayout()
+    gameState.computer = null
+    setupLayout(setup)
     
     // Encode and create session
     const encoded = encodeFullState(gameState)
@@ -2424,7 +2472,7 @@ async function updateUrlHash() {
         console.log('[DEV MODE] State saved to history, hash updated')
         
         // Re-render from hash to verify encoding/decoding works
-        setTimeout(() => {
+        if (!gameState.computer) setTimeout(() => {
           isLoadingFromHash = true
           const hashState = loadStateFromHash()
           if (hashState) {
@@ -2499,7 +2547,12 @@ function loadGameState(state) {
     console.log('[DEV MODE] Scarabs in loaded state:', scarabs)
   }
 
+  cancelComputerTurn()
+  document.getElementById('new-game-overlay').classList.add('hidden')
   // Set game state
+  gameState.setup = state.setup || 'classic'
+  gameState.computer = syncContext.enabled ? null : state.computer || null
+  gameState.ply = state.ply ?? 0
   gameState.currentPlayer = state.currentPlayer
   gameState.board = state.board
   gameState.gameOver = state.gameOver || false
@@ -2519,6 +2572,7 @@ function loadGameState(state) {
   if (!DEV_MODE) {
     updateUrlHash()
   }
+  maybeStartComputerTurn()
 }
 
 // Share Functions
