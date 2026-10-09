@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "build:single": "vite build --mode production",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test \"packages/*/test/*.test.ts\"",
+    "test": "node --test \"packages/*/test/*.test.ts\" \"test/*.test.js\"",
     "test:tools": "node --test --experimental-test-isolation=none --test-concurrency=1 tools/test/*.test.ts"
   },
   "devDependencies": {
