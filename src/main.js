@@ -8,7 +8,8 @@ import { LEVELS, applyMove, fromKFEN, newGame, toKFEN } from '../packages/khet-e
 import { engineMoveToGameAction, gameActionToEngineMove, gameStateToKFEN, kfenToBoard } from './ai/bridge.js'
 import AIWorker from './ai/ai-worker.js?worker&inline'
 import { applyBoardAction, actionFromTurn } from './game/moves.js'
-import { animationMs } from './game/animation.js'
+import { animationMs, prefersReducedMotion } from './game/animation.js'
+import { createLaserEffects } from './game/laserEffects.js'
 import { CARDINAL_VECTORS, computeLaserPath as traceGameLaser, findSphinx } from './game/laser.js'
 
 // Direction helpers (clockwise starting at north)
@@ -90,6 +91,7 @@ const syncContext = {
 }
 
 let laserLayerElement = null
+let laserEffects = null
 let activeLaserTimeout = null
 let listenersAttached = false
 let laserActive = false
@@ -130,6 +132,7 @@ function cancelComputerTurn() {
   activeLaserTimeout = null
   gameOverOverlayTimeout = null
   laserActive = false
+  clearLaserLayer()
   updateComputerStatus()
 }
 
@@ -587,7 +590,11 @@ function renderBoard() {
   const boardElement = document.getElementById('game-board')
   updateMoveConfirmation()
   boardElement.dataset.lastMove = lastMove ? JSON.stringify(lastMove) : ''
-  boardElement.style.setProperty('--laser-duration', `${animationMs('laserMs')}ms`)
+  for (const name of ['chargeMs', 'beamMs', 'impactMs', 'shieldMs', 'flashMs', 'shakeMs', 'tipPulseMs']) {
+    boardElement.style.setProperty(`--${name}`, `${animationMs(name)}ms`)
+  }
+  document.body.style.setProperty('--flashMs', `${animationMs('flashMs')}ms`)
+  document.body.style.setProperty('--shakeMs', `${animationMs('shakeMs')}ms`)
   boardElement.innerHTML = ''
   ensureLaserLayer()
   // Don't clear laser layer if game is over (keep winning laser path visible)
@@ -1522,25 +1529,10 @@ function handleFireLaser(moveInfo = null, onComplete = null) {
 
   laserActive = true
   clearLaserLayer()
-  renderLaserPath(path)
-  
-  // Update laser tip glow to active state
-  updateLaserTipGlow()
-
   const endpoint = path[path.length - 1]
-  if (endpoint.hit && endpoint.hitPiece) {
-    handleLaserHit(endpoint)
-    // Add hit info to move info
-    if (pendingMoveInfo) {
-      pendingMoveInfo.destroyed = endpoint.hitPiece.type
-    }
-  }
-
-  if (activeLaserTimeout) {
-    clearTimeout(activeLaserTimeout)
-  }
-
-  activeLaserTimeout = setTimeout(() => {
+  const complete = () => {
+    activeLaserTimeout = null
+    clearShotPresentation()
     if (!gameState.gameOver) {
       clearLaserLayer()
     }
@@ -1572,11 +1564,93 @@ function handleFireLaser(moveInfo = null, onComplete = null) {
       endTurn(pendingMoveInfo)
     }
     pendingMoveInfo = null
-  }, animationMs('laserMs'))
+  }
+  startLaserCharge(path[0])
+  activeLaserTimeout = setTimeout(() => {
+    clearShotPresentation()
+    renderLaserPath(path)
+    updateLaserTipGlow()
+    activeLaserTimeout = setTimeout(() => {
+      addLaserImpact(endpoint)
+      if (endpoint.hit && endpoint.hitPiece) {
+        handleLaserHit(endpoint)
+        if (pendingMoveInfo) pendingMoveInfo.destroyed = endpoint.hitPiece.type
+      }
+      const duration = endpoint.hit ? 'impactMs' : endpoint.absorbed && endpoint.hitPiece?.type === 'anubis' ? 'shieldMs' : 'fizzleMs'
+      activeLaserTimeout = setTimeout(complete, animationMs(duration))
+    }, animationMs('beamMs'))
+  }, animationMs('chargeMs'))
 }
 
 function computeLaserPath() {
   return traceGameLaser(gameState)
+}
+
+function startLaserCharge(segment) {
+  if (prefersReducedMotion()) return
+  ensureLaserLayer()
+  const board = document.getElementById('game-board')
+  const center = getSquareCenter(segment.startRow, segment.startCol, board.getBoundingClientRect())
+  const square = document.querySelector(`[data-row="${segment.startRow}"][data-col="${segment.startCol}"]`)
+  const color = gameState.currentPlayer === RED ? 'var(--player-red)' : 'var(--player-silver)'
+  square.style.setProperty('--shot-color', color)
+  square.classList.add('laser-charging')
+  const ring = document.createElement('div')
+  ring.className = 'laser-charge'
+  ring.style.setProperty('--shot-color', color)
+  Object.assign(ring.style, { left: `${center.x}%`, top: `${center.y}%`, width: `${100 / BOARD_COLS}%`, height: `${100 / BOARD_ROWS}%` })
+  laserLayerElement.appendChild(ring)
+}
+
+function clearShotPresentation() {
+  document.querySelectorAll('.laser-charging, .shield-hit').forEach(square => {
+    square.classList.remove('laser-charging', 'shield-hit')
+  })
+  laserLayerElement?.querySelectorAll('.laser-charge').forEach(ring => ring.remove())
+  document.body.classList.remove('pharaoh-hit', 'pharaoh-shake')
+}
+
+// The overlay is counter-rotated with the board, so use display coordinates for
+// the travel vector too. At exits, end the ray at the actual outer board edge.
+function laserEndpointCenter(segment, boardRect) {
+  if (!segment.outOfBounds) {
+    const center = getSquareCenter(segment.endRow, segment.endCol, boardRect)
+    if (segment.absorbed && segment.hitPiece?.type === 'anubis') {
+      const square = document.querySelector(`[data-row="${segment.endRow}"][data-col="${segment.endCol}"]`).getBoundingClientRect()
+      const vector = CARDINAL_VECTORS[transformFacing(segment.direction)]
+      // The shield face is 24% of the SVG size ahead of the Anubis center.
+      center.x -= vector.col * square.width * 0.82 * 0.24 / boardRect.width * 100
+      center.y -= vector.row * square.height * 0.82 * 0.24 / boardRect.height * 100
+    }
+    return center
+  }
+  const start = getSquareCenter(segment.startRow, segment.startCol, boardRect)
+  const vector = CARDINAL_VECTORS[transformFacing(segment.direction)]
+  return { x: vector.col ? (vector.col > 0 ? 100 : 0) : start.x,
+    y: vector.row ? (vector.row > 0 ? 100 : 0) : start.y }
+}
+
+function addLaserImpact(endpoint) {
+  const board = document.getElementById('game-board')
+  const center = laserEndpointCenter(endpoint, board.getBoundingClientRect())
+  const piece = endpoint.hitPiece
+  const kind = endpoint.hit ? (piece.type === 'pharaoh' ? 'pharaoh' : 'destroy') : piece?.type === 'anubis' ? 'shield' : 'fizzle'
+  const color = (piece?.player ?? gameState.currentPlayer) === RED ? '#f35b5b' : '#7fd1ff'
+  laserEffects?.burst({ ...center, kind, color, direction: CARDINAL_VECTORS[transformFacing(endpoint.direction)] })
+  if (kind === 'shield') {
+    const square = document.querySelector(`[data-row="${endpoint.hitRow}"][data-col="${endpoint.hitCol}"]`)
+    square.style.setProperty('--shot-color', color)
+    square.classList.add('shield-hit')
+  }
+  if (kind === 'pharaoh') {
+    document.body.classList.add('pharaoh-hit')
+    if (!prefersReducedMotion()) document.body.classList.add('pharaoh-shake')
+  }
+  const indicator = laserLayerElement?.querySelector('.laser-impact')
+  if (indicator) {
+    indicator.style.setProperty('--impactMs', `${animationMs(kind === 'shield' ? 'shieldMs' : kind === 'fizzle' ? 'fizzleMs' : 'impactMs')}ms`)
+    indicator.classList.add('laser-impact-active')
+  }
 }
 
 function renderLaserPath(path) {
@@ -1597,28 +1671,25 @@ function renderLaserPath(path) {
   const laserThicknessPercentHeight = (LASER_THICKNESS_PERCENT / 100) * squareHeightPercent
   const laserThicknessPercentWidth = (LASER_THICKNESS_PERCENT / 100) * squareWidthPercent
 
-  path.forEach(segment => {
+  // Weight by distance so reflections and the short exit leg don't change speed.
+  const segments = path.map(segment => {
     const startCenter = getSquareCenter(segment.startRow, segment.startCol, boardRect)
-    if (!startCenter) return
-
-    let endCenter = null
-    if (segment.outOfBounds) {
-      // Calculate end position as percentage
-      endCenter = {
-        x: startCenter.x + CARDINAL_VECTORS[segment.direction].col * (squareWidthPercent / 2),
-        y: startCenter.y + CARDINAL_VECTORS[segment.direction].row * (squareHeightPercent / 2)
-      }
-    } else {
-      endCenter = getSquareCenter(segment.endRow, segment.endCol, boardRect)
-    }
-
-    if (!endCenter) return
-
+    const endCenter = laserEndpointCenter(segment, boardRect)
+    const distance = Math.hypot((endCenter.x - startCenter.x) * boardRect.width, (endCenter.y - startCenter.y) * boardRect.height)
+    return { segment, startCenter, endCenter, distance }
+  })
+  const totalDistance = segments.reduce((sum, item) => sum + item.distance, 0)
+  let delay = 0
+  segments.forEach(({ segment, startCenter, endCenter, distance }) => {
     const laserSegment = document.createElement('div')
     laserSegment.className = 'laser-path'
 
     const deltaX = endCenter.x - startCenter.x
     const deltaY = endCenter.y - startCenter.y
+    const duration = totalDistance ? animationMs('beamMs') * distance / totalDistance : 0
+    laserSegment.style.setProperty('--segment-ms', `${duration}ms`)
+    laserSegment.style.setProperty('--segment-delay', `${delay}ms`)
+    delay += duration
 
     if (Math.abs(deltaX) >= Math.abs(deltaY)) {
       const lengthPercent = Math.abs(deltaX)
@@ -1626,12 +1697,16 @@ function renderLaserPath(path) {
       laserSegment.style.height = `${laserThicknessPercentHeight}%`
       laserSegment.style.left = `${Math.min(startCenter.x, endCenter.x)}%`
       laserSegment.style.top = `${startCenter.y - (laserThicknessPercentHeight / 2)}%`
+      laserSegment.style.setProperty('--beam-from', 'scaleX(0)')
+      laserSegment.style.transformOrigin = deltaX >= 0 ? 'left center' : 'right center'
     } else {
       const lengthPercent = Math.abs(deltaY)
       laserSegment.style.width = `${laserThicknessPercentWidth}%`
       laserSegment.style.height = `${lengthPercent}%`
       laserSegment.style.left = `${startCenter.x - (laserThicknessPercentWidth / 2)}%`
       laserSegment.style.top = `${Math.min(startCenter.y, endCenter.y)}%`
+      laserSegment.style.setProperty('--beam-from', 'scaleY(0)')
+      laserSegment.style.transformOrigin = deltaY >= 0 ? 'center top' : 'center bottom'
     }
 
     laserLayerElement.appendChild(laserSegment)
@@ -1675,6 +1750,7 @@ function handleLaserHit(endpoint) {
     // Add destruction animation before removing the piece
     addDestructionAnimation(hitRow, hitCol)
     gameState.board[hitRow][hitCol] = null
+    document.querySelector(`[data-row="${hitRow}"][data-col="${hitCol}"] .piece-container`)?.remove()
   }
 
   if (hitPiece.type === 'pharaoh') {
@@ -1711,50 +1787,9 @@ function addDestructionAnimation(row, col) {
   glowElement.style.width = `${squareWidthPercent}%`
   glowElement.style.height = `${squareHeightPercent}%`
   
-  // Create particle container
-  const particleContainer = document.createElement('div')
-  particleContainer.className = 'particle-container'
-  particleContainer.style.left = `${squareCenter.x}%`
-  particleContainer.style.top = `${squareCenter.y}%`
-  
-  // Create multiple particles flying in random directions
-  const particleCount = 12
-  for (let i = 0; i < particleCount; i++) {
-    const particle = document.createElement('div')
-    particle.className = 'destruction-particle'
-    
-    // Random direction and distance
-    // Distance: 25-40px originally = 35.7-57.1% of 70px square
-    // Use percentage of square size
-    const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5
-    const distancePercent = (35.7 + Math.random() * 21.4) / 100 // 35.7-57.1% of square
-    const duration = animationMs('particleMs') + Math.random() * animationMs('particleSpreadMs') // 800-1200ms duration
-    
-    // Calculate end position as percentage of board dimensions
-    const endXPercent = Math.cos(angle) * distancePercent * squareWidthPercent
-    const endYPercent = Math.sin(angle) * distancePercent * squareHeightPercent
-    
-    particle.style.setProperty('--end-x', `${endXPercent}%`)
-    particle.style.setProperty('--end-y', `${endYPercent}%`)
-    particle.style.setProperty('--duration', `${duration}ms`)
-    
-    particleContainer.appendChild(particle)
-  }
-  
-  // Add to laser layer so they appear above pieces
+  // Keep the existing destruction glow; shards now share the board canvas.
   ensureLaserLayer()
   laserLayerElement.appendChild(glowElement)
-  laserLayerElement.appendChild(particleContainer)
-  
-  // Remove the animation elements after they finish
-  setTimeout(() => {
-    if (glowElement.parentNode) {
-      glowElement.remove()
-    }
-    if (particleContainer.parentNode) {
-      particleContainer.remove()
-    }
-  }, animationMs('laserMs'))
 }
 
 function ensureLaserLayer() {
@@ -1773,9 +1808,14 @@ function ensureLaserLayer() {
   } else {
     laserLayerElement.style.transform = ''
   }
+  if (!laserEffects) laserEffects = createLaserEffects(boardElement)
+  if (!boardElement.contains(laserEffects.canvas)) boardElement.appendChild(laserEffects.canvas)
+  laserEffects.canvas.style.transform = laserLayerElement.style.transform
 }
 
 function clearLaserLayer() {
+  clearShotPresentation()
+  laserEffects?.clear()
   if (laserLayerElement) {
     laserLayerElement.innerHTML = ''
   }
@@ -1862,13 +1902,13 @@ function getSquareCenter(row, col, boardRect) {
 
   const squareRect = square.getBoundingClientRect()
   // Return percentages relative to board dimensions
-  const xPercent = ((squareRect.left - boardRect.left + (boardRect.width / BOARD_COLS) / 2) / boardRect.width) * 100
-  const yPercent = ((squareRect.top - boardRect.top + (boardRect.height / BOARD_ROWS) / 2) / boardRect.height) * 100
+  const xPercent = ((squareRect.left - boardRect.left + squareRect.width / 2) / boardRect.width) * 100
+  const yPercent = ((squareRect.top - boardRect.top + squareRect.height / 2) / boardRect.height) * 100
   return {
     x: xPercent,
     y: yPercent,
-    xPx: squareRect.left - boardRect.left + (boardRect.width / BOARD_COLS) / 2,
-    yPx: squareRect.top - boardRect.top + (boardRect.height / BOARD_ROWS) / 2
+    xPx: squareRect.left - boardRect.left + squareRect.width / 2,
+    yPx: squareRect.top - boardRect.top + squareRect.height / 2
   }
 }
 

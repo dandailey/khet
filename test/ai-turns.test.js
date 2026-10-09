@@ -62,8 +62,9 @@ function liveGame(setup, humanSide = 2) {
     console: { error(...args) { errors.push(args) } },
     clearSelection() {}, renderBoard() { calls.push('render'); context.updateMoveConfirmation() }, updateUrlHash() {},
     selectPiece() { calls.push('select') }, renderLaserPath() { calls.push('laser') },
-    clearLaserLayer() {}, updateLaserTipGlow() {}, addDestructionAnimation() {}, persistLaserPath() {},
-    stopSyncPolling() {}, showGameOverOverlay() {}, endTurnAndSync(moveInfo) { calls.push('sync'); context.recordTurn(moveInfo) },
+    startLaserCharge() { calls.push('charge') }, addLaserImpact() { calls.push('impact') }, clearShotPresentation() {},
+    clearLaserLayer() { calls.push('clear-effects') }, updateLaserTipGlow() {}, addDestructionAnimation() {}, persistLaserPath() {},
+    stopSyncPolling() {}, showGameOverOverlay() { calls.push('win-overlay') }, endTurnAndSync(moveInfo) { calls.push('sync'); context.recordTurn(moveInfo) },
     hideTurnOverlay() {}, showTurnStartOverlay() { calls.push('turn-overlay') }, updateSyncStatusUI() {}, saveSyncStorage() {},
     showToast(message) { toasts.push(message) }
   })
@@ -338,14 +339,70 @@ test('reset during opponent motion cancels overlays and every pending turn timer
   assert.ok(game.calls.includes('cancel-motion'))
 })
 
+test('charge and beam finish before destruction; impact finishes before turn and win overlay', () => {
+  const game = liveGame('classic')
+  const position = fromPieces([
+    { row: 7, col: 9, type: SPHINX, color: SILVER, o: 3 },
+    { row: 0, col: 0, type: SPHINX, color: RED, o: 2 },
+    { row: 6, col: 4, type: PHARAOH, color: SILVER, o: 0 },
+    { row: 7, col: 5, type: PHARAOH, color: RED, o: 0 }
+  ])
+  Object.assign(game.context.gameState, kfenToBoard(toKFEN(position)), { computer: null })
+  const { context, calls, delays } = game
+  context.turnInProgress = true
+  context.handleFireLaser()
+  assert.equal(calls.at(-1), 'charge')
+  assert.equal(delays.at(-1), ANIMATION.chargeMs)
+  assert.equal(calls.includes('laser'), false)
+  assert.equal(context.gameState.gameOver, false)
+  game.nextTimer()
+  assert.equal(calls.at(-1), 'laser')
+  assert.equal(delays.at(-1), ANIMATION.beamMs)
+  assert.equal(context.gameState.board[7][5].type, 'pharaoh', 'target survives until the beam arrives')
+  game.nextTimer()
+  assert.equal(calls.at(-1), 'impact')
+  assert.equal(context.gameState.board[7][5], null)
+  assert.equal(context.gameState.gameOver, true)
+  assert.equal(context.turnInProgress, true, 'input stays locked during impact')
+  assert.equal(context.gameState.ply, 0)
+  assert.equal(delays.at(-1), ANIMATION.impactMs)
+  assert.equal(calls.includes('win-overlay'), false)
+  game.nextTimer()
+  assert.equal(context.turnInProgress, false)
+  assert.equal(context.gameState.ply, 1)
+  assert.equal(delays.at(-1), ANIMATION.gameOverMs)
+  assert.equal(calls.includes('win-overlay'), false)
+  game.nextTimer()
+  assert.equal(calls.at(-1), 'win-overlay')
+})
+
+for (const phase of ['charge', 'beam', 'impact']) {
+  test(`reset during ${phase} clears effects and cancels the remaining shot`, () => {
+    const game = liveGame('classic')
+    game.context.gameState.computer = null
+    game.context.turnInProgress = true
+    game.context.handleFireLaser()
+    if (phase !== 'charge') game.nextTimer()
+    if (phase === 'impact') game.nextTimer()
+    game.context.cancelComputerTurn()
+    assert.equal(game.timers.size, 0)
+    assert.equal(game.context.laserActive, false)
+    assert.equal(game.context.turnInProgress, false)
+    assert.equal(game.context.gameState.ply, 0, 'cancelled shot never advances the turn')
+    assert.ok(game.calls.includes('clear-effects'))
+  })
+}
+
 test('reduced motion caps all turn durations at 100 ms', () => {
   const previous = globalThis.matchMedia
   globalThis.matchMedia = () => ({ matches: true })
   try {
-    for (const name of ['highlightMs', 'moveMs', 'rotateMs', 'holdMs', 'laserMs']) {
+    for (const name of ['highlightMs', 'moveMs', 'rotateMs', 'holdMs', 'beamMs', 'impactMs', 'shieldMs', 'fizzleMs']) {
       assert.equal(animationMs(name), 100, name)
     }
     assert.equal(animationMs('fireDelayMs'), 50)
+    assert.equal(animationMs('chargeMs'), 0)
+    assert.equal(animationMs('shakeMs'), 0)
   } finally {
     if (previous === undefined) delete globalThis.matchMedia
     else globalThis.matchMedia = previous

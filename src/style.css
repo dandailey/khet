@@ -257,13 +257,15 @@ main {
   position: absolute;
   background: linear-gradient(180deg, rgba(255, 94, 122, 0.9) 0%, rgba(255, 55, 95, 0.6) 100%);
   box-shadow: 0 0 1.125em rgba(255, 55, 95, 0.9), 0 0 1.75em rgba(255, 120, 140, 0.8);
-  opacity: 0;
-  animation: laser-pulse var(--laser-duration) ease-in-out forwards;
+  opacity: 1;
+  transform: var(--beam-from);
+  animation: beam-reveal var(--segment-ms) linear var(--segment-delay) forwards;
 }
 
 .laser-path-persistent {
   animation: none;
   opacity: 1;
+  transform: none;
 }
 
 .laser-impact {
@@ -271,9 +273,13 @@ main {
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 236, 130, 0.95) 0%, rgba(255, 94, 122, 0.9) 45%, rgba(255, 55, 95, 0) 70%);
   box-shadow: 0 0 1.125em rgba(255, 236, 130, 0.9), 0 0 1.875em rgba(255, 55, 95, 0.6);
-  animation: laser-impact-pulse var(--laser-duration) ease-in-out forwards;
+  opacity: 0;
   pointer-events: none;
   /* Width and height are set via inline styles in JavaScript */
+}
+
+.laser-impact-active {
+  animation: laser-impact-pulse var(--impactMs) ease-in-out forwards;
 }
 
 .laser-impact-persistent {
@@ -281,23 +287,9 @@ main {
   opacity: 1;
 }
 
-@keyframes laser-pulse {
-  0% {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-  15% {
-    opacity: 1;
-    transform: scale(1.02);
-  }
-  80% {
-    opacity: 1;
-    transform: scale(1.02);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.04);
-  }
+@keyframes beam-reveal {
+  from { transform: var(--beam-from); }
+  to { transform: scale(1); }
 }
 
 @keyframes laser-impact-pulse {
@@ -326,12 +318,12 @@ main {
   background: radial-gradient(circle, rgba(255, 55, 95, 0.3) 0%, rgba(255, 55, 95, 0.1) 50%, transparent 70%);
   pointer-events: none;
   z-index: 1;
-  animation: laser-tip-glow-pulse 2s ease-in-out infinite;
+  animation: laser-tip-glow-pulse var(--tipPulseMs) ease-in-out infinite;
   /* Width and height are set via inline styles in JavaScript */
 }
 
 .laser-tip-glow.active {
-  animation: laser-tip-glow-active var(--laser-duration) ease-in-out forwards;
+  animation: laser-tip-glow-active var(--beamMs) ease-in-out forwards;
 }
 
 @keyframes laser-tip-glow-pulse {
@@ -830,23 +822,78 @@ main {
   box-shadow: 0 0 1.5625em rgba(255, 20, 147, 0.9), 0 0 2.5em rgba(255, 105, 180, 0.7), 0 0 3.75em rgba(255, 182, 193, 0.5);
   pointer-events: none;
   z-index: 5;
-  animation: destruction-glow-pulse var(--laser-duration) ease-out forwards;
+  animation: destruction-glow-pulse var(--impactMs) ease-out forwards;
 }
 
-.particle-container {
+.laser-particles {
   position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  z-index: 6;
+  z-index: 9;
 }
 
-.destruction-particle {
+.laser-charge {
   position: absolute;
-  width: 0.1875em;
-  height: 0.1875em;
-  background: rgba(255, 255, 255, 0.9);
   border-radius: 50%;
-  box-shadow: 0 0 0.25em rgba(255, 255, 255, 0.8);
-  animation: particle-fly var(--duration) ease-out forwards;
+  border: 2px solid var(--shot-color);
+  background: radial-gradient(circle, #fff8 0%, transparent 60%);
+  box-shadow: 0 0 1.5em var(--shot-color), inset 0 0 1em var(--shot-color);
+  animation: laser-charge-ring var(--chargeMs) ease-in forwards;
+}
+
+.laser-charging .piece-svg {
+  animation: sphinx-charge var(--chargeMs) ease-in forwards;
+}
+
+.shield-hit .blocker-line {
+  animation: shield-flash var(--shieldMs) ease-out forwards;
+}
+
+@keyframes laser-charge-ring {
+  0% { opacity: 0.2; transform: translate(-50%, -50%) scale(0.2); }
+  40% { opacity: 0.65; transform: translate(-50%, -50%) scale(0.5); }
+  60% { opacity: 0.45; transform: translate(-50%, -50%) scale(0.6); }
+  80% { opacity: 0.9; transform: translate(-50%, -50%) scale(0.75); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+}
+
+@keyframes sphinx-charge {
+  0% { filter: drop-shadow(0 0 0.1em var(--shot-color)); }
+  45%, 80% { filter: drop-shadow(0 0 0.7em var(--shot-color)) brightness(1.5); }
+  60% { filter: drop-shadow(0 0 0.35em var(--shot-color)); }
+  100% { filter: drop-shadow(0 0 1em var(--shot-color)) brightness(2); }
+}
+
+@keyframes shield-flash {
+  0%, 25% { stroke: #fff; filter: drop-shadow(0 0 0.4em var(--shot-color)); }
+  100% { stroke: rgba(8, 9, 11, 0.95); filter: none; }
+}
+
+.pharaoh-hit::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  pointer-events: none;
+  z-index: 999;
+  animation: pharaoh-flash var(--flashMs) ease-out forwards;
+}
+
+.pharaoh-shake #app {
+  animation: pharaoh-shake var(--shakeMs) ease-out;
+}
+
+@keyframes pharaoh-flash {
+  from { opacity: 0.35; }
+  to { opacity: 0; }
+}
+
+@keyframes pharaoh-shake {
+  0%, 100% { translate: 0 0; }
+  20%, 60% { translate: -4px 2px; }
+  40%, 80% { translate: 4px -2px; }
 }
 
 @keyframes destruction-glow-pulse {
@@ -865,21 +912,6 @@ main {
   100% {
     opacity: 0;
     transform: scale(1.3);
-  }
-}
-
-@keyframes particle-fly {
-  0% {
-    opacity: 1;
-    transform: translate(0, 0) scale(1);
-  }
-  70% {
-    opacity: 0.8;
-    transform: translate(var(--end-x, 0), var(--end-y, 0)) scale(0.8);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(var(--end-x, 0), var(--end-y, 0)) scale(0.3);
   }
 }
 
@@ -1280,6 +1312,16 @@ main {
   }
 
   .laser-tip-glow:not(.active) {
+    animation: none;
+  }
+
+  .laser-charge,
+  .pharaoh-hit::after {
+    display: none;
+  }
+
+  .laser-charging .piece-svg,
+  .pharaoh-shake #app {
     animation: none;
   }
 }

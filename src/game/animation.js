@@ -5,14 +5,23 @@ export const ANIMATION = Object.freeze({
   rotateMs: 500,
   holdMs: 300,
   fireDelayMs: 50,
-  laserMs: 1500,
+  chargeMs: 900,
+  beamMs: 350,
+  impactMs: 900,
+  shieldMs: 450,
+  fizzleMs: 300,
+  flashMs: 180,
+  shakeMs: 300,
+  tipPulseMs: 2000,
   gameOverMs: 800,
-  particleMs: 800,
-  particleSpreadMs: 400,
   reducedMs: 100
 })
 
+export function prefersReducedMotion() {
+  return !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
+
 export function animationMs(name) {
-  return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    ? Math.min(ANIMATION[name], ANIMATION.reducedMs) : ANIMATION[name]
+  if (!prefersReducedMotion()) return ANIMATION[name]
+  return name === 'chargeMs' || name === 'shakeMs' ? 0 : Math.min(ANIMATION[name], ANIMATION.reducedMs)
 }

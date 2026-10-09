@@ -84,6 +84,11 @@ async function assertStaged(page, action, state) {
   assert.equal(await page.locator('#move-confirmation').isVisible(), false)
   await clickAction(page, action, state)
   await page.getByRole('button', { name: 'Fire laser', exact: true }).click()
+  await page.locator('.laser-charge').waitFor({ state: 'attached', timeout: 5000 })
+  assert.equal(await page.locator('.laser-path').count(), 0, 'charge precedes the beam')
+  assert.equal(await page.locator('canvas.laser-particles').count(), 1, 'all impacts share one board canvas')
+  await page.locator('.laser-path').first().waitFor({ state: 'attached', timeout: 5000 })
+  assert.equal(await page.locator('.laser-charge').count(), 0, 'charge ring is cleaned up before the beam')
 }
 async function assertReplyDestination(page, before, after) {
   const action = await page.locator('#game-board').evaluate(board => JSON.parse(board.dataset.lastMove))
