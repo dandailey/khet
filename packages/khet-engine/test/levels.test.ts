@@ -82,7 +82,7 @@ test('Level searches are deterministic with fixed seeds and node budgets', () =>
 test('Noise zero uses the plain search move; explicit limits override level defaults', () => {
   const pos = newGame(), opts = { depth: 1, nodes: 2000, timeMs: 10000, seed: 52, ttSize: 1024 };
   const plain = search(pos, opts);
-  for (const level of [7, 8]) {
+  for (const level of [8, 9]) {
     const result = bestMove(pos, { ...opts, level });
     assert.equal(result.move, plain.move); assert.equal(result.score, plain.score);
     assert.equal(result.depth, 1); assert.equal(result.rootScores, undefined);

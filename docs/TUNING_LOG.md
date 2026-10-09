@@ -161,3 +161,12 @@ roughly, but recalibrate before calling the ladder final. Next: SPSA v3 from v2 
 10k nodes, 800 games: 333/122/345, -5.2 Elo [-27.6, 17.1] (LLR -1.47, inconclusive);
 300 ms, 120 games: 39/30/51, -34.9 Elo [-88.6, 15.9]. Rejected; v2 stays the default. Game-based tuning of
 these 15 scalars has plateaued at this search depth; further gains need new evaluation features or search work.
+
+## 2026-10-09 — Final round on the SPSA v2 eval
+
+**External benchmark:** vs jkugs/khetai at 500 ms, 60 games: **55/3/2, +483 Elo [313, 699]** (was +382 with the
+untuned eval).
+
+**Ladder recalibration (40 games per pair):** L2-L1 +255, L3-L2 +470, L4-L3 +255, L5-L4 +301, L6-L5 +158,
+L7-L6 +512, L8-L7 +61, L9-L8 +98, L10-L9 +285. The tuned eval sharpened the shallow levels. Adjustments:
+L3 noise 50 -> 80, L6 noise 30 -> 20, L7 noise 0 -> 15; pairs 2..8 re-verified next.
