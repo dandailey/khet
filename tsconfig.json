@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "lib": ["ES2022", "WebWorker"],
+    "types": ["node"],
+    "skipLibCheck": true
+  },
+  "include": ["packages/**/*.ts", "tools/**/*.ts"]
+}

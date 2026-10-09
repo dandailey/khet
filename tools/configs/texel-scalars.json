@@ -1,0 +1,96 @@
+{
+ "passes": 20,
+ "kMax": 0.1,
+ "params": {
+  "anubis": {
+   "start": 120,
+   "step": 12.0,
+   "min": -60,
+   "max": 300
+  },
+  "exposureLine": {
+   "start": -100,
+   "step": 10.0,
+   "min": -250,
+   "max": 50
+  },
+  "exposureReach": {
+   "start": -4,
+   "step": 1,
+   "min": -64,
+   "max": 56
+  },
+  "exposureOpen": {
+   "start": -1,
+   "step": 1,
+   "min": -61,
+   "max": 59
+  },
+  "shelterBlocker": {
+   "start": 8,
+   "step": 1,
+   "min": -52,
+   "max": 68
+  },
+  "shelterShield": {
+   "start": 16,
+   "step": 1.6,
+   "min": -44,
+   "max": 76
+  },
+  "backRank": {
+   "start": 10,
+   "step": 1,
+   "min": -50,
+   "max": 70
+  },
+  "hangingPyramid": {
+   "start": -45,
+   "step": 4.5,
+   "min": -112,
+   "max": 22
+  },
+  "hangingAnubis": {
+   "start": -55,
+   "step": 5.5,
+   "min": -138,
+   "max": 28
+  },
+  "beamLength": {
+   "start": 1,
+   "step": 1,
+   "min": -59,
+   "max": 61
+  },
+  "beamNearKing": {
+   "start": 3,
+   "step": 1,
+   "min": -57,
+   "max": 63
+  },
+  "beamAdjacent": {
+   "start": 2,
+   "step": 1,
+   "min": -58,
+   "max": 62
+  },
+  "pyramidMobility": {
+   "start": 2,
+   "step": 1,
+   "min": -58,
+   "max": 62
+  },
+  "scarabMobility": {
+   "start": 3,
+   "step": 1,
+   "min": -57,
+   "max": 63
+  },
+  "tempo": {
+   "start": 5,
+   "step": 1,
+   "min": -55,
+   "max": 65
+  }
+ }
+}

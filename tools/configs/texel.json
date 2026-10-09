@@ -1,0 +1,9 @@
+{
+  "passes":12,
+  "kMax":0.1,
+  "params":{
+    "pyramid":{"start":100,"step":10,"min":50,"max":200},
+    "anubis":{"start":120,"step":10,"min":50,"max":220},
+    "tempo":{"start":5,"step":2,"min":-20,"max":20}
+  }
+}

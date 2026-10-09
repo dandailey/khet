@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+tools/results/
+external/
+!external/
+external/*
+!external/bridge/
+external/bridge/khetai_cli
+external/bridge/khetai_cli-*
